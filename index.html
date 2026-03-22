@@ -206,12 +206,12 @@
 
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: var(--space-4);
       margin-bottom: var(--space-6);
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 1024px) {
       .summary-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -532,6 +532,66 @@
     .inline-input {
       max-width: 180px;
     }
+
+    /* Mobile card layout for the table */
+    @media (max-width: 720px) {
+      .table-wrapper {
+        max-height: none;
+        overflow-x: visible;
+        border: none;
+        background: transparent;
+      }
+
+      table {
+        border-collapse: separate;
+        border-spacing: 0 0.75rem;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tbody tr {
+        display: block;
+        background: var(--color-surface);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-sm);
+        padding: var(--space-3) var(--space-3);
+        border: 1px solid var(--color-border);
+      }
+
+      tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 0.25rem 0;
+        border-bottom: none;
+      }
+
+      tbody td::before {
+        content: attr(data-label);
+        font-size: var(--text-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--color-text-muted);
+        margin-right: var(--space-2);
+        white-space: nowrap;
+      }
+
+      .cell-bank {
+        font-weight: 600;
+      }
+
+      .cell-notes {
+        max-width: none;
+        white-space: normal;
+      }
+
+      td[data-label="Actions"] {
+        justify-content: flex-end;
+        margin-top: var(--space-2);
+      }
+    }
   </style>
 </head>
 <body>
@@ -553,7 +613,7 @@
         <h3>Workflow tips</h3>
         <p>
           1) Find an offer, 2) add it here with terms, 3) meet requirements, 4) track bonus posted date,
-          5) use “Next eligible” to know when you can go again based on the bank’s cooldown rule.
+          5) use cooldown + reminders to know when to close and when you can repeat.
         </p>
       </div>
     </header>
@@ -573,6 +633,11 @@
         <div class="summary-label">Received this tax year</div>
         <div class="summary-value" id="summary-tax-year">$0</div>
         <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Pending this tax year</div>
+        <div class="summary-value" id="summary-pending-year">$0</div>
+        <div class="summary-sub">Planned / in progress / waiting</div>
       </div>
     </section>
 
@@ -596,6 +661,18 @@
               </div>
 
               <div>
+                <label for="accountHolder">Name on account</label>
+                <input id="accountHolder" type="text" placeholder="Exact name on bank account">
+              </div>
+              <div>
+                <label for="loginLabel">Login label (no password)</label>
+                <input id="loginLabel" type="text" placeholder="e.g., WF Checking (see password manager)">
+                <div class="helper-text">
+                  Do not store real passwords here; just a nickname or hint.
+                </div>
+              </div>
+
+              <div>
                 <label for="bonusAmount">Bonus amount</label>
                 <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g., 400">
               </div>
@@ -604,9 +681,11 @@
                 <select id="status" required>
                   <option value="planned">Planned</option>
                   <option value="in_progress">In progress</option>
-                  <option value="requirements_met">Requirements met / waiting</option>
+                  <option value="requirements_met">Requirements met / waiting for bonus</option>
                   <option value="bonus_posted">Bonus posted</option>
-                  <option value="closed">Closed / not repeating</option>
+                  <option value="closed">Closed</option>
+                  <option value="closed_repeat">Closed / will repeat in future</option>
+                  <option value="closing">Account closure process started</option>
                   <option value="cancelled">Cancelled / denied</option>
                 </select>
               </div>
@@ -646,17 +725,45 @@
                   <option value="24">Wait 24 months</option>
                   <option value="lifetime">Once per lifetime</option>
                 </select>
-                <div class="helper-text">
-                  From T&amp;Cs, e.g. “no bonus if you had an account in the last 12 months”.
-                </div>
               </div>
               <div>
                 <label for="cooldownMonths">Cooldown to repeat (months)</label>
                 <input id="cooldownMonths" type="number" min="0" step="1" placeholder="e.g., 12">
                 <div class="helper-text">
-                  Used with bonus‑posted or closed date to compute the “Next eligible” date.
+                  Used with anchor date to compute the “Next eligible” date.
                 </div>
               </div>
+
+              <div>
+                <label for="repeatAnchor">Repeat rule anchor</label>
+                <select id="repeatAnchor">
+                  <option value="auto">Automatic (bonus then closed)</option>
+                  <option value="bonus">Use bonus posted date</option>
+                  <option value="closed">Use account closed date</option>
+                </select>
+              </div>
+              <div>
+                <label for="plannedLifeMonths">Planned account life (months)</label>
+                <input id="plannedLifeMonths" type="number" min="0" step="1" placeholder="e.g., 6">
+                <div class="helper-text">
+                  Used with open date to estimate when you plan to close.
+                </div>
+              </div>
+
+              <div>
+                <label for="remindBeforeDeadlineDays">Remind before deadline (days)</label>
+                <input id="remindBeforeDeadlineDays" type="number" min="0" step="1" placeholder="e.g., 7">
+              </div>
+              <div>
+                <label for="remindBeforeRepeatDays">Remind before repeat date (days)</label>
+                <input id="remindBeforeRepeatDays" type="number" min="0" step="1" placeholder="e.g., 30">
+              </div>
+
+              <div>
+                <label for="remindBeforeCloseDays">Remind before close date (days)</label>
+                <input id="remindBeforeCloseDays" type="number" min="0" step="1" placeholder="e.g., 14">
+              </div>
+              <div class="field-full"></div>
 
               <div class="field-full">
                 <label for="requirements">Requirements summary</label>
@@ -703,6 +810,7 @@
           </div>
           <p class="helper-text">
             Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync there too.
+            For email/SMS reminders, a Google Apps Script can read the same JSON file daily and send alerts.
           </p>
           <div class="actions-row" style="justify-content:flex-start;">
             <button type="button" class="btn-secondary" id="drive-connect-btn" disabled>Connect Drive</button>
@@ -752,6 +860,16 @@
             </div>
           </div>
         </div>
+
+        <div class="panel" id="reminders-panel" style="margin-top: 1.5rem;">
+          <div class="panel-header">
+            <h3>Upcoming repeats & deadlines</h3>
+          </div>
+          <p class="helper-text" id="reminders-empty">
+            No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.
+          </p>
+          <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
+        </div>
       </div>
     </section>
   </div>
@@ -790,6 +908,7 @@
       const summaryReceivedEl = el('summary-received');
       const summaryTaxYearEl = el('summary-tax-year');
       const summaryTaxYearLabelEl = el('summary-tax-year-label');
+      const summaryPendingYearEl = el('summary-pending-year');
 
       const rowsTbodyEl = el('bonus-rows');
       const emptyStateEl = el('empty-state');
@@ -800,6 +919,7 @@
 
       const cooldownPresetEl = el('cooldownPreset');
       const cooldownMonthsEl = el('cooldownMonths');
+      const repeatAnchorEl = el('repeatAnchor');
 
       const driveConnectBtn = el('drive-connect-btn');
       const driveSaveBtn = el('drive-save-btn');
@@ -824,6 +944,8 @@
             id: b.id || String(Date.now() + Math.random()),
             bank: b.bank || '',
             accountName: b.accountName || '',
+            accountHolder: b.accountHolder || '',
+            loginLabel: b.loginLabel || '',
             bonusAmount: Number.isFinite(b.bonusAmount) ? b.bonusAmount : parseFloat(b.bonusAmount || '0') || 0,
             status: b.status || 'planned',
             dateOpened: b.dateOpened || null,
@@ -834,6 +956,11 @@
             monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
             cooldownPreset: b.cooldownPreset || 'custom',
             cooldownMonths: b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
+            repeatAnchor: b.repeatAnchor || 'auto',
+            plannedLifeMonths: b.plannedLifeMonths != null ? parseInt(b.plannedLifeMonths, 10) : null,
+            remindBeforeDeadlineDays: b.remindBeforeDeadlineDays != null ? parseInt(b.remindBeforeDeadlineDays, 10) : null,
+            remindBeforeRepeatDays: b.remindBeforeRepeatDays != null ? parseInt(b.remindBeforeRepeatDays, 10) : null,
+            remindBeforeCloseDays: b.remindBeforeCloseDays != null ? parseInt(b.remindBeforeCloseDays, 10) : null,
             requirements: b.requirements || '',
             feeWaiver: b.feeWaiver || '',
             eligibilityNotes: b.eligibilityNotes || '',
@@ -902,7 +1029,33 @@
           alt: 'media',
         });
         const parsed = Array.isArray(res.result) ? res.result : [];
-        state.bonuses = parsed;
+        state.bonuses = parsed.map((b) => ({
+          id: b.id || String(Date.now() + Math.random()),
+          bank: b.bank || '',
+          accountName: b.accountName || '',
+          accountHolder: b.accountHolder || '',
+          loginLabel: b.loginLabel || '',
+          bonusAmount: Number.isFinite(b.bonusAmount) ? b.bonusAmount : parseFloat(b.bonusAmount || '0') || 0,
+          status: b.status || 'planned',
+          dateOpened: b.dateOpened || null,
+          deadline: b.deadline || null,
+          dateRequirementsMet: b.dateRequirementsMet || null,
+          dateBonusPosted: b.dateBonusPosted || null,
+          dateClosed: b.dateClosed || null,
+          monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
+          cooldownPreset: b.cooldownPreset || 'custom',
+          cooldownMonths: b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
+          repeatAnchor: b.repeatAnchor || 'auto',
+          plannedLifeMonths: b.plannedLifeMonths != null ? parseInt(b.plannedLifeMonths, 10) : null,
+          remindBeforeDeadlineDays: b.remindBeforeDeadlineDays != null ? parseInt(b.remindBeforeDeadlineDays, 10) : null,
+          remindBeforeRepeatDays: b.remindBeforeRepeatDays != null ? parseInt(b.remindBeforeRepeatDays, 10) : null,
+          remindBeforeCloseDays: b.remindBeforeCloseDays != null ? parseInt(b.remindBeforeCloseDays, 10) : null,
+          requirements: b.requirements || '',
+          feeWaiver: b.feeWaiver || '',
+          eligibilityNotes: b.eligibilityNotes || '',
+          sourceUrl: b.sourceUrl || '',
+          notes: b.notes || ''
+        }));
         saveToLocalStorage();
       }
 
@@ -934,6 +1087,8 @@
           id: state.editingId || String(Date.now()),
           bank: el('bank').value.trim(),
           accountName: el('accountName').value.trim(),
+          accountHolder: el('accountHolder').value.trim(),
+          loginLabel: el('loginLabel').value.trim(),
           bonusAmount: parseFloat(el('bonusAmount').value || '0'),
           status: el('status').value,
           dateOpened: el('dateOpened').value || null,
@@ -945,6 +1100,19 @@
           cooldownPreset: cooldownPresetEl.value,
           cooldownMonths: cooldownMonthsEl.value
             ? parseInt(cooldownMonthsEl.value, 10)
+            : null,
+          repeatAnchor: repeatAnchorEl.value,
+          plannedLifeMonths: el('plannedLifeMonths').value
+            ? parseInt(el('plannedLifeMonths').value, 10)
+            : null,
+          remindBeforeDeadlineDays: el('remindBeforeDeadlineDays').value
+            ? parseInt(el('remindBeforeDeadlineDays').value, 10)
+            : null,
+          remindBeforeRepeatDays: el('remindBeforeRepeatDays').value
+            ? parseInt(el('remindBeforeRepeatDays').value, 10)
+            : null,
+          remindBeforeCloseDays: el('remindBeforeCloseDays').value
+            ? parseInt(el('remindBeforeCloseDays').value, 10)
             : null,
           requirements: el('requirements').value.trim(),
           feeWaiver: el('feeWaiver').value.trim(),
@@ -964,6 +1132,7 @@
         formErrorEl.style.display = 'none';
         cooldownPresetEl.value = 'custom';
         cooldownMonthsEl.disabled = false;
+        repeatAnchorEl.value = 'auto';
       }
 
       function validateForm(data) {
@@ -1000,47 +1169,89 @@
         switch (status) {
           case 'planned': return 'Planned';
           case 'in_progress': return 'In progress';
-          case 'requirements_met': return 'Reqs met / waiting';
+          case 'requirements_met': return 'Requirements met / waiting for bonus';
           case 'bonus_posted': return 'Bonus posted';
           case 'closed': return 'Closed';
-          case 'cancelled': return 'Cancelled';
+          case 'closed_repeat': return 'Closed / will repeat in future';
+          case 'closing': return 'Account closure process started';
+          case 'cancelled': return 'Cancelled / denied';
           default: return status;
         }
       }
 
       function isClosedLike(status) {
-        return status === 'closed' || status === 'cancelled';
+        return status === 'closed' || status === 'closed_repeat' || status === 'closing' || status === 'cancelled';
+      }
+
+      function addMonths(dateIso, months) {
+        if (!dateIso || !months || months <= 0) return null;
+        const d = new Date(dateIso + 'T00:00:00');
+        if (Number.isNaN(d.getTime())) return null;
+        const result = new Date(d);
+        result.setMonth(result.getMonth() + months);
+        return result;
+      }
+
+      function subtractDays(dateObj, days) {
+        if (!dateObj || !days || days <= 0) return null;
+        const d = new Date(dateObj);
+        d.setDate(d.getDate() - days);
+        return d;
       }
 
       function computeNextEligibility(b) {
         if (!b.cooldownMonths || b.cooldownMonths <= 0) return null;
 
-        const baseIso = b.dateBonusPosted || b.dateClosed;
+        let baseIso = null;
+        if (b.repeatAnchor === 'bonus') {
+          baseIso = b.dateBonusPosted || null;
+        } else if (b.repeatAnchor === 'closed') {
+          baseIso = b.dateClosed || null;
+        } else {
+          baseIso = b.dateBonusPosted || b.dateClosed || null;
+        }
         if (!baseIso) return null;
 
-        const d = new Date(baseIso + 'T00:00:00');
-        if (Number.isNaN(d.getTime())) return null;
+        return addMonths(baseIso, b.cooldownMonths);
+      }
 
-        const result = new Date(d);
-        result.setMonth(result.getMonth() + b.cooldownMonths);
-        return result;
+      function computePlannedCloseDate(b) {
+        if (!b.plannedLifeMonths || b.plannedLifeMonths <= 0 || !b.dateOpened) return null;
+        return addMonths(b.dateOpened, b.plannedLifeMonths);
       }
 
       function computeSummary() {
         let expected = 0;
         let received = 0;
         let receivedThisYear = 0;
+        let pendingThisYear = 0;
 
         for (const b of state.bonuses) {
           if (b.status !== 'cancelled') {
             expected += b.bonusAmount || 0;
           }
-          if (b.status === 'bonus_posted' || b.status === 'closed') {
+          const bonusYear = b.dateBonusPosted
+            ? new Date(b.dateBonusPosted + 'T00:00:00').getFullYear()
+            : null;
+
+          const isRealized =
+            b.status === 'bonus_posted' ||
+            b.status === 'closed' ||
+            b.status === 'closed_repeat' ||
+            b.status === 'closing';
+
+          if (isRealized) {
             received += b.bonusAmount || 0;
-            if (b.dateBonusPosted) {
-              const year = new Date(b.dateBonusPosted + 'T00:00:00').getFullYear();
-              if (year === currentYear) {
-                receivedThisYear += b.bonusAmount || 0;
+            if (bonusYear === currentYear) {
+              receivedThisYear += b.bonusAmount || 0;
+            }
+          } else {
+            // Pending this year heuristic: if deadline, bonus, or open date is in this year
+            const anchorIso = b.deadline || b.dateBonusPosted || b.dateOpened;
+            if (anchorIso) {
+              const y = new Date(anchorIso + 'T00:00:00').getFullYear();
+              if (y === currentYear) {
+                pendingThisYear += b.bonusAmount || 0;
               }
             }
           }
@@ -1050,6 +1261,99 @@
         summaryReceivedEl.textContent = currency.format(received || 0);
         summaryTaxYearEl.textContent = currency.format(receivedThisYear || 0);
         summaryTaxYearLabelEl.textContent = 'Tax year ' + currentYear;
+        summaryPendingYearEl.textContent = currency.format(pendingThisYear || 0);
+      }
+
+      function renderReminders() {
+        const listEl = el('reminders-list');
+        const emptyEl = el('reminders-empty');
+        if (!listEl || !emptyEl) return;
+
+        const now = new Date();
+        const items = [];
+
+        for (const b of state.bonuses) {
+          const label = `${b.bank || 'Unknown bank'} – ${b.accountName || ''}`;
+
+          // Repeat reminder
+          const repeatDate = computeNextEligibility(b);
+          if (repeatDate) {
+            const lead = b.remindBeforeRepeatDays || 30;
+            const reminderDate = subtractDays(repeatDate, lead) || repeatDate;
+            if (reminderDate >= now) {
+              items.push({
+                when: reminderDate,
+                displayDate: repeatDate,
+                type: 'repeat',
+                label,
+                detail: `Repeat bonus window (remind ${lead} days before)`,
+              });
+            }
+          }
+
+          // Requirements deadline reminder
+          if (b.deadline) {
+            const d = new Date(b.deadline + 'T00:00:00');
+            if (!Number.isNaN(d.getTime())) {
+              const lead = b.remindBeforeDeadlineDays || 7;
+              const reminderDate = subtractDays(d, lead) || d;
+              if (reminderDate >= now) {
+                items.push({
+                  when: reminderDate,
+                  displayDate: d,
+                  type: 'deadline',
+                  label,
+                  detail: `Requirements deadline (remind ${lead} days before)`,
+                });
+              }
+            }
+          }
+
+          // Planned close reminder
+          const closeDate = computePlannedCloseDate(b);
+          if (closeDate) {
+            const lead = b.remindBeforeCloseDays || 14;
+            const reminderDate = subtractDays(closeDate, lead) || closeDate;
+            if (reminderDate >= now) {
+              items.push({
+                when: reminderDate,
+                displayDate: closeDate,
+                type: 'close',
+                label,
+                detail: `Planned account close date (remind ${lead} days before)`,
+              });
+            }
+          }
+        }
+
+        items.sort((a, b) => a.when - b.when);
+
+        listEl.innerHTML = '';
+        if (!items.length) {
+          emptyEl.style.display = 'block';
+          return;
+        }
+        emptyEl.style.display = 'none';
+
+        for (const item of items.slice(0, 15)) {
+          const li = document.createElement('li');
+          li.style.padding = '0.25rem 0';
+
+          const strong = document.createElement('div');
+          strong.style.fontSize = 'var(--text-sm)';
+          strong.textContent = item.label;
+
+          const meta = document.createElement('div');
+          meta.style.fontSize = 'var(--text-xs)';
+          meta.style.color = 'var(--color-text-muted)';
+          const whenStr = item.when.toLocaleDateString();
+          const eventStr = item.displayDate.toLocaleDateString();
+          meta.textContent = `${item.detail} – event ${eventStr}, reminder ${whenStr}`;
+
+          li.appendChild(strong);
+          li.appendChild(meta);
+          listEl.appendChild(li);
+        }
       }
 
       function renderTable() {
@@ -1084,6 +1388,7 @@
 
           const tdBank = document.createElement('td');
           tdBank.className = 'cell-bank';
+          tdBank.setAttribute('data-label', 'Bank / account');
           if (b.sourceUrl) {
             const link = document.createElement('a');
             link.href = b.sourceUrl;
@@ -1102,6 +1407,7 @@
           tr.appendChild(tdBank);
 
           const tdStatus = document.createElement('td');
+          tdStatus.setAttribute('data-label', 'Status');
           const statusPill = document.createElement('span');
           statusPill.className = 'pill pill-muted';
           statusPill.textContent = getStatusLabel(b.status);
@@ -1109,6 +1415,7 @@
           tr.appendChild(tdStatus);
 
           const tdBonus = document.createElement('td');
+          tdBonus.setAttribute('data-label', 'Bonus');
           tdBonus.textContent = currency.format(b.bonusAmount || 0);
           if (b.monthlyFee && b.monthlyFee > 0) {
             const feeDiv = document.createElement('div');
@@ -1121,12 +1428,17 @@
 
           const tdDates = document.createElement('td');
           tdDates.style.fontSize = 'var(--text-xs)';
+          tdDates.setAttribute('data-label', 'Key dates');
           const parts = [];
           if (b.dateOpened) parts.push('Opened: ' + formatDate(b.dateOpened));
           if (b.deadline) parts.push('Deadline: ' + formatDate(b.deadline));
-          if (b.dateBonusPosted) parts.push('Bonus: ' + formatDate(b.dateBonusPosted));
+          if (b.dateBonusPosted) {
+            const year = new Date(b.dateBonusPosted + 'T00:00:00').getFullYear();
+            parts.push('Bonus: ' + formatDate(b.dateBonusPosted) + ` (Y${year})`);
+          }
           if (b.dateClosed) parts.push('Closed: ' + formatDate(b.dateClosed));
-
+          const plannedClose = computePlannedCloseDate(b);
+          if (plannedClose) parts.push('Planned close: ' + plannedClose.toLocaleDateString());
           const next = computeNextEligibility(b);
           if (next) {
             parts.push('Next eligible: ' + next.toLocaleDateString());
@@ -1137,6 +1449,7 @@
 
           const tdNotes = document.createElement('td');
           tdNotes.className = 'cell-notes';
+          tdNotes.setAttribute('data-label', 'Requirements / notes');
           const req = b.requirements || '';
           const notes = b.notes || '';
           let text = '';
@@ -1149,6 +1462,7 @@
           tr.appendChild(tdNotes);
 
           const tdActions = document.createElement('td');
+          tdActions.setAttribute('data-label', 'Actions');
           const editBtn = document.createElement('button');
           editBtn.type = 'button';
           editBtn.className = 'btn-secondary btn-sm';
@@ -1177,6 +1491,12 @@
         }
       }
 
+      function renderAll() {
+        computeSummary();
+        renderTable();
+        renderReminders();
+      }
+
       function loadIntoForm(id) {
         const b = state.bonuses.find(b => b.id === id);
         if (!b) return;
@@ -1187,6 +1507,8 @@
 
         el('bank').value = b.bank || '';
         el('accountName').value = b.accountName || '';
+        el('accountHolder').value = b.accountHolder || '';
+        el('loginLabel').value = b.loginLabel || '';
         el('bonusAmount').value = b.bonusAmount != null ? b.bonusAmount : '';
         el('status').value = b.status || 'planned';
         el('dateOpened').value = b.dateOpened || '';
@@ -1195,22 +1517,21 @@
         el('dateBonusPosted').value = b.dateBonusPosted || '';
         el('dateClosed').value = b.dateClosed || '';
         el('monthlyFee').value = b.monthlyFee != null ? b.monthlyFee : '';
+        cooldownPresetEl.value = b.cooldownPreset || 'custom';
+        cooldownMonthsEl.value = b.cooldownMonths != null ? b.cooldownMonths : '';
+        cooldownMonthsEl.disabled = cooldownPresetEl.value === 'lifetime';
+        repeatAnchorEl.value = b.repeatAnchor || 'auto';
+        el('plannedLifeMonths').value = b.plannedLifeMonths != null ? b.plannedLifeMonths : '';
+        el('remindBeforeDeadlineDays').value = b.remindBeforeDeadlineDays != null ? b.remindBeforeDeadlineDays : '';
+        el('remindBeforeRepeatDays').value = b.remindBeforeRepeatDays != null ? b.remindBeforeRepeatDays : '';
+        el('remindBeforeCloseDays').value = b.remindBeforeCloseDays != null ? b.remindBeforeCloseDays : '';
         el('requirements').value = b.requirements || '';
         el('feeWaiver').value = b.feeWaiver || '';
         el('eligibilityNotes').value = b.eligibilityNotes || '';
         el('sourceUrl').value = b.sourceUrl || '';
         el('notes').value = b.notes || '';
 
-        cooldownPresetEl.value = b.cooldownPreset || 'custom';
-        cooldownMonthsEl.value = b.cooldownMonths != null ? b.cooldownMonths : '';
-        cooldownMonthsEl.disabled = cooldownPresetEl.value === 'lifetime';
-
         formErrorEl.style.display = 'none';
-      }
-
-      function renderAll() {
-        computeSummary();
-        renderTable();
       }
 
       formEl.addEventListener('submit', async (evt) => {

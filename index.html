@@ -5,16 +5,17 @@
   <title>Bank Bonus Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Google Drive config: replace with your real values -->
+  <!-- Google Drive config -->
   <script>
     const GOOGLE_CLIENT_ID = '35195643841-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
-    const GOOGLE_API_KEY = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
-    const DRIVE_FOLDER_ID = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
+    const GOOGLE_API_KEY   = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
+    const DRIVE_FOLDER_ID  = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
+
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+    const GOOGLE_SCOPES        = 'https://www.googleapis.com/auth/drive.file';
 
     let gapiInited = false;
-    let gisInited = false;
+    let gisInited  = false;
     let tokenClient = null;
 
     function gapiLoaded() {
@@ -701,18 +702,12 @@
             <h3>Backup / restore</h3>
           </div>
           <p class="helper-text">
-            Auto‑saves in this browser. Export a JSON backup or sync it to Google Drive for yourself only.
+            Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync there too.
           </p>
           <div class="actions-row" style="justify-content:flex-start;">
-            <button type="button" class="btn-secondary" id="export-btn">Export JSON</button>
-            <label class="btn-secondary" style="cursor:pointer; position:relative; overflow:hidden;">
-              Import JSON
-              <input type="file" id="import-file" accept="application/json" style="position:absolute; inset:0; opacity:0; cursor:pointer;">
-            </label>
             <button type="button" class="btn-secondary" id="drive-connect-btn" disabled>Connect Drive</button>
             <button type="button" class="btn-secondary" id="drive-save-btn" disabled>Save to Drive</button>
           </div>
-          <div id="import-error" class="error-text" style="display:none;"></div>
           <span class="helper-text" id="drive-status" style="margin-top:0.5rem; display:block;">
             Not connected to Drive.
           </span>
@@ -772,6 +767,7 @@
       const DRIVE_FILE_ID_KEY = 'bankBonusDriveFileId_v1';
 
       let driveFileId = null;
+      let isDriveConnected = false;
 
       const currency = new Intl.NumberFormat(undefined, {
         style: 'currency',
@@ -786,7 +782,6 @@
 
       const formEl = el('bonus-form');
       const formErrorEl = el('form-error');
-      const importErrorEl = el('import-error');
       const editingPillEl = el('editing-pill');
       const formTitleEl = el('form-title');
       const saveBtnLabelEl = el('save-btn-label');
@@ -850,59 +845,55 @@
         }
       }
 
-async function ensureDriveFileId() {
-  if (driveFileId) return driveFileId;
+      async function ensureDriveFileId() {
+        if (driveFileId) return driveFileId;
 
-  // Try cached ID from this browser
-  const savedId = window.localStorage.getItem(DRIVE_FILE_ID_KEY);
-  if (savedId) {
-    try {
-      const res = await gapi.client.drive.files.get({
-        fileId: savedId,
-        fields: 'id',
-      });
-      if (res.result && res.result.id) {
-        driveFileId = res.result.id;
+        const savedId = window.localStorage.getItem(DRIVE_FILE_ID_KEY);
+        if (savedId) {
+          try {
+            const res = await gapi.client.drive.files.get({
+              fileId: savedId,
+              fields: 'id',
+            });
+            if (res.result && res.result.id) {
+              driveFileId = res.result.id;
+              return driveFileId;
+            }
+          } catch (e) {
+            console.warn('Stored Drive file ID invalid, will recreate.', e);
+          }
+        }
+
+        const listRes = await gapi.client.drive.files.list({
+          q:
+            "name = 'bank-bonuses-data.json' and trashed = false and '" +
+            DRIVE_FOLDER_ID +
+            "' in parents",
+          pageSize: 1,
+          fields: 'files(id, name)',
+        });
+        if (listRes.result.files && listRes.result.files.length > 0) {
+          driveFileId = listRes.result.files[0].id;
+          window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+          return driveFileId;
+        }
+
+        const createRes = await gapi.client.drive.files.create({
+          resource: {
+            name: 'bank-bonuses-data.json',
+            mimeType: 'application/json',
+            parents: [DRIVE_FOLDER_ID],
+          },
+          media: {
+            mimeType: 'application/json',
+            body: JSON.stringify([]),
+          },
+          fields: 'id',
+        });
+        driveFileId = createRes.result.id;
+        window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
         return driveFileId;
       }
-    } catch (e) {
-      console.warn('Stored Drive file ID invalid, will recreate.', e);
-    }
-  }
-
-  // Look for the JSON file inside the dedicated folder
-  const listRes = await gapi.client.drive.files.list({
-    q:
-      "name = 'bank-bonuses-data.json' and trashed = false and '" +
-      DRIVE_FOLDER_ID +
-      "' in parents",
-    pageSize: 1,
-    fields: 'files(id, name)',
-  });
-  if (listRes.result.files && listRes.result.files.length > 0) {
-    driveFileId = listRes.result.files[0].id;
-    window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-    return driveFileId;
-  }
-
-  // Create a new file in that folder with an empty array
-  const createRes = await gapi.client.drive.files.create({
-    resource: {
-      name: 'bank-bonuses-data.json',
-      mimeType: 'application/json',
-      parents: [DRIVE_FOLDER_ID],
-    },
-    media: {
-      mimeType: 'application/json',
-      body: JSON.stringify([]),
-    },
-    fields: 'id',
-  });
-  driveFileId = createRes.result.id;
-  window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-  return driveFileId;
-}
-
 
       async function loadFromDrive() {
         const fileId = await ensureDriveFileId();
@@ -924,6 +915,18 @@ async function ensureDriveFileId() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(state.bonuses),
         });
+      }
+
+      async function maybeAutoSaveToDrive() {
+        if (!isDriveConnected) return;
+        try {
+          driveStatusEl.textContent = 'Auto-saving to Drive...';
+          await saveToDrive();
+          driveStatusEl.textContent = 'Auto-saved to Drive at ' + new Date().toLocaleTimeString();
+        } catch (e) {
+          console.error(e);
+          driveStatusEl.textContent = 'Auto-save to Drive failed (local copy is still saved).';
+        }
       }
 
       function serializeForm() {
@@ -1158,11 +1161,12 @@ async function ensureDriveFileId() {
           delBtn.className = 'btn-danger btn-sm';
           delBtn.style.marginLeft = '0.35rem';
           delBtn.textContent = 'Delete';
-          delBtn.addEventListener('click', () => {
+          delBtn.addEventListener('click', async () => {
             if (confirm('Delete this bonus entry?')) {
               deleteBonus(b.id);
               saveToLocalStorage();
               renderAll();
+              await maybeAutoSaveToDrive();
             }
           });
           tdActions.appendChild(delBtn);
@@ -1209,7 +1213,7 @@ async function ensureDriveFileId() {
         renderTable();
       }
 
-      formEl.addEventListener('submit', (evt) => {
+      formEl.addEventListener('submit', async (evt) => {
         evt.preventDefault();
         const data = serializeForm();
         const err = validateForm(data);
@@ -1223,6 +1227,7 @@ async function ensureDriveFileId() {
         saveToLocalStorage();
         resetForm();
         renderAll();
+        await maybeAutoSaveToDrive();
       });
 
       el('reset-btn').addEventListener('click', (e) => {
@@ -1246,62 +1251,6 @@ async function ensureDriveFileId() {
         }
       });
 
-      el('export-btn').addEventListener('click', () => {
-        const dataStr = JSON.stringify(state.bonuses, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const stamp = new Date().toISOString().slice(0,10);
-        a.href = url;
-        a.download = `bank-bonus-tracker-${stamp}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-
-      el('import-file').addEventListener('change', (evt) => {
-        importErrorEl.style.display = 'none';
-        const file = evt.target.files && evt.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          try {
-            const parsed = JSON.parse(e.target.result);
-            if (!Array.isArray(parsed)) throw new Error('JSON must be an array of bonus objects');
-            state.bonuses = parsed.map((b) => ({
-              id: b.id || String(Date.now() + Math.random()),
-              bank: b.bank || '',
-              accountName: b.accountName || '',
-              bonusAmount: Number.isFinite(b.bonusAmount) ? b.bonusAmount : parseFloat(b.bonusAmount || '0') || 0,
-              status: b.status || 'planned',
-              dateOpened: b.dateOpened || null,
-              deadline: b.deadline || null,
-              dateRequirementsMet: b.dateRequirementsMet || null,
-              dateBonusPosted: b.dateBonusPosted || null,
-              dateClosed: b.dateClosed || null,
-              monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
-              cooldownPreset: b.cooldownPreset || 'custom',
-              cooldownMonths: b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
-              requirements: b.requirements || '',
-              feeWaiver: b.feeWaiver || '',
-              eligibilityNotes: b.eligibilityNotes || '',
-              sourceUrl: b.sourceUrl || '',
-              notes: b.notes || ''
-            }));
-            saveToLocalStorage();
-            resetForm();
-            renderAll();
-          } catch (err) {
-            importErrorEl.textContent = 'Import failed: ' + err.message;
-            importErrorEl.style.display = 'block';
-          } finally {
-            evt.target.value = '';
-          }
-        };
-        reader.readAsText(file);
-      });
-
       if (driveConnectBtn) {
         driveConnectBtn.addEventListener('click', () => {
           if (!gapiInited || !gisInited || !tokenClient) {
@@ -1320,8 +1269,9 @@ async function ensureDriveFileId() {
               await ensureDriveFileId();
               await loadFromDrive();
               renderAll();
-              driveStatusEl.textContent = 'Connected to Drive. Remember to click "Save to Drive" after changes.';
+              isDriveConnected = true;
               driveSaveBtn.disabled = false;
+              driveStatusEl.textContent = 'Connected to Drive. Changes will auto‑save.';
             } catch (e) {
               console.error(e);
               driveStatusEl.textContent = 'Connected, but could not load Drive file.';
@@ -1348,7 +1298,6 @@ async function ensureDriveFileId() {
 
       loadFromLocalStorage();
       renderAll();
-      // Re-run in case APIs loaded before DOM
       if (typeof maybeEnableDriveButtons === 'function') {
         maybeEnableDriveButtons();
       }

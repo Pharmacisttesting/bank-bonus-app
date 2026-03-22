@@ -593,7 +593,6 @@
                 <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g., 12">
               </div>
 
-              <!-- New: cooldown rule preset + numeric months -->
               <div>
                 <label for="cooldownPreset">Repeat rule preset</label>
                 <select id="cooldownPreset">
@@ -658,7 +657,7 @@
             <h3>Backup / restore</h3>
           </div>
           <p class="helper-text">
-            This app keeps everything in‑memory. Export a JSON backup to your computer and re‑import it later on any device.
+            This app keeps everything in‑memory and also auto‑saves in this browser. Export a JSON backup to your computer or Google Drive and re‑import it later on any device.
           </p>
           <div class="actions-row" style="justify-content:flex-start;">
             <button type="button" class="btn-secondary" id="export-btn">Export JSON</button>
@@ -720,6 +719,8 @@
         editingId: null
       };
 
+      const STORAGE_KEY = 'bankBonusData_v1';
+
       const currency = new Intl.NumberFormat(undefined, {
         style: 'currency',
         currency: 'USD',
@@ -752,6 +753,46 @@
 
       const cooldownPresetEl = el('cooldownPreset');
       const cooldownMonthsEl = el('cooldownMonths');
+
+      function saveToLocalStorage() {
+        try {
+          const json = JSON.stringify(state.bonuses);
+          window.localStorage.setItem(STORAGE_KEY, json);
+        } catch (e) {
+          console.warn('Could not save to localStorage', e);
+        }
+      }
+
+      function loadFromLocalStorage() {
+        try {
+          const json = window.localStorage.getItem(STORAGE_KEY);
+          if (!json) return;
+          const parsed = JSON.parse(json);
+          if (!Array.isArray(parsed)) return;
+          state.bonuses = parsed.map((b) => ({
+            id: b.id || String(Date.now() + Math.random()),
+            bank: b.bank || '',
+            accountName: b.accountName || '',
+            bonusAmount: Number.isFinite(b.bonusAmount) ? b.bonusAmount : parseFloat(b.bonusAmount || '0') || 0,
+            status: b.status || 'planned',
+            dateOpened: b.dateOpened || null,
+            deadline: b.deadline || null,
+            dateRequirementsMet: b.dateRequirementsMet || null,
+            dateBonusPosted: b.dateBonusPosted || null,
+            dateClosed: b.dateClosed || null,
+            monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
+            cooldownPreset: b.cooldownPreset || 'custom',
+            cooldownMonths: b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
+            requirements: b.requirements || '',
+            feeWaiver: b.feeWaiver || '',
+            eligibilityNotes: b.eligibilityNotes || '',
+            sourceUrl: b.sourceUrl || '',
+            notes: b.notes || ''
+          }));
+        } catch (e) {
+          console.warn('Could not load from localStorage', e);
+        }
+      }
 
       function serializeForm() {
         return {
@@ -988,6 +1029,7 @@
           delBtn.addEventListener('click', () => {
             if (confirm('Delete this bonus entry?')) {
               deleteBonus(b.id);
+              saveToLocalStorage();
               renderAll();
             }
           });
@@ -1046,6 +1088,7 @@
         }
         formErrorEl.style.display = 'none';
         upsertBonus(data);
+        saveToLocalStorage();
         resetForm();
         renderAll();
       });
@@ -1107,15 +1150,14 @@
               dateClosed: b.dateClosed || null,
               monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
               cooldownPreset: b.cooldownPreset || 'custom',
-              cooldownMonths: b.cooldownMonths != null
-                ? parseInt(b.cooldownMonths, 10)
-                : null,
+              cooldownMonths: b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
               requirements: b.requirements || '',
               feeWaiver: b.feeWaiver || '',
               eligibilityNotes: b.eligibilityNotes || '',
               sourceUrl: b.sourceUrl || '',
               notes: b.notes || ''
             }));
+            saveToLocalStorage();
             resetForm();
             renderAll();
           } catch (err) {
@@ -1128,6 +1170,7 @@
         reader.readAsText(file);
       });
 
+      loadFromLocalStorage();
       renderAll();
     })();
   </script>

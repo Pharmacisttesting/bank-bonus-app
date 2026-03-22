@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bank Bonus Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --space-12: 3rem;
+
+      --color-bg: #f7f6f2;
+      --color-surface: #fbfbf9;
+      --color-surface-alt: #f3f0ec;
+      --color-border: #d4d1ca;
+      --color-text: #28251d;
+      --color-text-muted: #7a7974;
+      --color-primary: #01696f;
+      --color-primary-soft: #cedcd8;
+      --color-error: #a12c7b;
+
+      --radius-sm: 0.375rem;
+      --radius-md: 0.5rem;
+      --radius-lg: 0.75rem;
+
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+
+      --content-max: 1120px;
+      --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-bg: #171614;
+        --color-surface: #201f1d;
+        --color-surface-alt: #262523;
+        --color-border: #393836;
+        --color-text: #cdccca;
+        --color-text-muted: #797876;
+        --color-primary: #4f98a3;
+        --color-primary-soft: #313b3b;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+      }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      text-size-adjust: none;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: var(--text-base);
+      line-height: 1.6;
+      color: var(--color-text);
+      background: radial-gradient(circle at top, #ffffff 0, var(--color-bg) 45%, var(--color-bg) 100%);
+      padding: var(--space-6) var(--space-4);
+      display: flex;
+      justify-content: center;
+    }
+
+    .app-shell {
+      width: 100%;
+      max-width: var(--content-max);
+      background: var(--color-surface);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--color-border);
+      padding: var(--space-6);
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: var(--space-4);
+      }
+      .app-shell {
+        padding: var(--space-4);
+        border-radius: var(--radius-md);
+      }
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: var(--text-xl);
+      margin-bottom: var(--space-2);
+    }
+
+    h2 {
+      font-size: var(--text-lg);
+      margin-bottom: var(--space-2);
+    }
+
+    h3 {
+      font-size: var(--text-base);
+      margin-bottom: var(--space-1);
+    }
+
+    p {
+      margin-bottom: var(--space-2);
+      color: var(--color-text-muted);
+    }
+
+    a {
+      color: var(--color-primary);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
+    }
+
+    .header-main {
+      max-width: 32rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.1rem 0.6rem;
+      border-radius: 999px;
+      background: var(--color-primary-soft);
+      color: var(--color-primary);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: var(--space-2);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
+    }
+
+    @media (max-width: 768px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 520px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .summary-card {
+      background: var(--color-surface-alt);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--color-border);
+    }
+
+    .summary-label {
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .summary-value {
+      font-size: var(--text-lg);
+      font-weight: 600;
+    }
+
+    .summary-sub {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+    }
+
+    .layout-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+      gap: var(--space-6);
+      align-items: flex-start;
+    }
+
+    @media (max-width: 960px) {
+      .layout-columns {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--color-surface-alt);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      border: 1px solid var(--color-border);
+    }
+
+    .panel + .panel {
+      margin-top: var(--space-4);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+    }
+
+    .panel-header h2,
+    .panel-header h3 {
+      margin-bottom: 0;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3) var(--space-4);
+    }
+
+    @media (max-width: 640px) {
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    label {
+      display: block;
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="date"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      font-size: var(--text-sm);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      color: var(--color-text);
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: var(--color-text-muted);
+      opacity: 0.8;
+    }
+
+    textarea {
+      min-height: 5.5rem;
+      resize: vertical;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 1px var(--color-primary-soft);
+      background: #ffffff10;
+    }
+
+    .field-full {
+      grid-column: 1 / -1;
+    }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      justify-content: flex-end;
+      margin-top: var(--space-4);
+    }
+
+    button {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      padding: 0.4rem 0.9rem;
+      font-size: var(--text-sm);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      background: none;
+      color: inherit;
+      transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+      border-color: var(--color-primary);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #0c4e54;
+      border-color: #0c4e54;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-secondary {
+      border-color: var(--color-border);
+      background: var(--color-surface);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--color-surface-alt);
+    }
+
+    .btn-danger {
+      border-color: var(--color-error);
+      color: var(--color-error);
+      background: var(--color-surface);
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(161,44,123,0.08);
+    }
+
+    .btn-sm {
+      padding: 0.25rem 0.6rem;
+      font-size: var(--text-xs);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      font-size: var(--text-xs);
+      background: var(--color-primary-soft);
+      color: var(--color-primary);
+      white-space: nowrap;
+    }
+
+    .pill-muted {
+      background: #00000010;
+      color: var(--color-text-muted);
+    }
+
+    .table-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .table-toolbar-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .small-select {
+      padding-inline: 0.6rem 1.8rem;
+      font-size: var(--text-xs);
+    }
+
+    .table-wrapper {
+      max-height: 480px;
+      overflow: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--text-sm);
+    }
+
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--color-surface-alt);
+    }
+
+    th, td {
+      padding: 0.45rem 0.75rem;
+      border-bottom: 1px solid var(--color-border);
+      vertical-align: top;
+    }
+
+    th {
+      text-align: left;
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--color-text-muted);
+      background: var(--color-surface-alt);
+    }
+
+    tbody tr:hover {
+      background: rgba(1,105,111,0.06);
+    }
+
+    .cell-bank {
+      font-weight: 600;
+    }
+
+    .cell-notes {
+      max-width: 18rem;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      color: var(--color-text-muted);
+    }
+
+    .empty-state {
+      padding: var(--space-4);
+      text-align: center;
+      color: var(--color-text-muted);
+      font-size: var(--text-sm);
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      font-size: var(--text-xs);
+      border: 1px solid rgba(0,0,0,0.06);
+      background: rgba(0,0,0,0.02);
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+
+    .error-text {
+      color: var(--color-error);
+      font-size: var(--text-xs);
+      margin-top: 0.25rem;
+    }
+
+    .helper-text {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      margin-top: 0.1rem;
+    }
+
+    .inline-input {
+      max-width: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell" id="app">
+    <header class="header">
+      <div class="header-main">
+        <div class="badge">Bank bonus churning</div>
+        <h1>Bank Bonus Tracker</h1>
+        <p>
+          Track every checking and savings bonus: requirements, deadlines, fees, payout dates, and when
+          you can repeat. Pair this with
+          <a href="https://www.doctorofcredit.com/best-bank-account-bonuses/" target="_blank" rel="noopener noreferrer">
+            Doctor of Credit’s bonus lists
+          </a>
+          to find new offers.
+        </p>
+      </div>
+      <div>
+        <h3>Workflow tips</h3>
+        <p>
+          1) Find an offer, 2) add it here with terms, 3) meet requirements, 4) track bonus posted date,
+          5) use “Next eligible” to know when you can go again based on the bank’s cooldown rule.
+        </p>
+      </div>
+    </header>
+
+    <section class="summary-grid" id="summary">
+      <div class="summary-card">
+        <div class="summary-label">Expected bonuses</div>
+        <div class="summary-value" id="summary-expected">$0</div>
+        <div class="summary-sub">Sum of all non‑cancelled bonuses</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Received bonuses</div>
+        <div class="summary-value" id="summary-received">$0</div>
+        <div class="summary-sub">All time, based on bonus posted dates</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Received this tax year</div>
+        <div class="summary-value" id="summary-tax-year">$0</div>
+        <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
+      </div>
+    </section>
+
+    <section class="layout-columns">
+      <div>
+        <div class="panel" id="form-panel">
+          <div class="panel-header">
+            <h2 id="form-title">Add bank bonus</h2>
+            <span class="pill-muted pill" id="editing-pill" style="display:none;">Editing</span>
+          </div>
+          <form id="bonus-form">
+            <input type="hidden" id="bonus-id" value="">
+            <div class="field-grid">
+              <div>
+                <label for="bank">Bank</label>
+                <input id="bank" type="text" required placeholder="e.g., BMO, Chase, SoFi">
+              </div>
+              <div>
+                <label for="accountName">Account name</label>
+                <input id="accountName" type="text" required placeholder="e.g., Smart Advantage Checking">
+              </div>
+
+              <div>
+                <label for="bonusAmount">Bonus amount</label>
+                <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g., 400">
+              </div>
+              <div>
+                <label for="status">Status</label>
+                <select id="status" required>
+                  <option value="planned">Planned</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="requirements_met">Requirements met / waiting</option>
+                  <option value="bonus_posted">Bonus posted</option>
+                  <option value="closed">Closed / not repeating</option>
+                  <option value="cancelled">Cancelled / denied</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="dateOpened">Date opened</label>
+                <input id="dateOpened" type="date">
+              </div>
+              <div>
+                <label for="deadline">Deadline to meet requirements</label>
+                <input id="deadline" type="date">
+              </div>
+
+              <div>
+                <label for="dateRequirementsMet">Date requirements met</label>
+                <input id="dateRequirementsMet" type="date">
+              </div>
+              <div>
+                <label for="dateBonusPosted">Date bonus posted</label>
+                <input id="dateBonusPosted" type="date">
+              </div>
+
+              <div>
+                <label for="dateClosed">Date closed</label>
+                <input id="dateClosed" type="date">
+              </div>
+              <div>
+                <label for="monthlyFee">Monthly fee (if any)</label>
+                <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g., 12">
+              </div>
+
+              <!-- New: cooldown rule preset + numeric months -->
+              <div>
+                <label for="cooldownPreset">Repeat rule preset</label>
+                <select id="cooldownPreset">
+                  <option value="custom">Custom / not set</option>
+                  <option value="12">Wait 12 months</option>
+                  <option value="24">Wait 24 months</option>
+                  <option value="lifetime">Once per lifetime</option>
+                </select>
+                <div class="helper-text">
+                  From T&amp;Cs, e.g. “no bonus if you had an account in the last 12 months”.
+                </div>
+              </div>
+              <div>
+                <label for="cooldownMonths">Cooldown to repeat (months)</label>
+                <input id="cooldownMonths" type="number" min="0" step="1" placeholder="e.g., 12">
+                <div class="helper-text">
+                  Used with bonus‑posted or closed date to compute the “Next eligible” date.
+                </div>
+              </div>
+
+              <div class="field-full">
+                <label for="requirements">Requirements summary</label>
+                <textarea id="requirements" placeholder="e.g., $4,000 DD within 90 days; 10 debit transactions; maintain $1k balance..."></textarea>
+              </div>
+
+              <div class="field-full">
+                <label for="feeWaiver">Fee waiver details</label>
+                <textarea id="feeWaiver" placeholder="e.g., waive with $4k DD or $1,500 min balance or existing mortgage..."></textarea>
+              </div>
+
+              <div class="field-full">
+                <label for="eligibilityNotes">Eligibility / state notes</label>
+                <textarea id="eligibilityNotes" placeholder="e.g., CA only; new customers; no bonus if had account in last 12 months."></textarea>
+              </div>
+
+              <div class="field-full">
+                <label for="sourceUrl">Source URL (Doctor of Credit or bank)</label>
+                <input id="sourceUrl" type="text" placeholder="Paste the specific DoC article URL or bank landing page">
+                <div class="helper-text">
+                  Keep the original offer link so you can re‑check terms or verify if they change.
+                </div>
+              </div>
+
+              <div class="field-full">
+                <label for="notes">Notes</label>
+                <textarea id="notes" placeholder="Tracking notes: which ACH coded as DD, clawback risk, 1099‑INT details, follow‑ups, etc."></textarea>
+              </div>
+            </div>
+
+            <div class="actions-row">
+              <button type="button" class="btn-secondary" id="reset-btn">Clear form</button>
+              <button type="submit" class="btn-primary" id="save-btn">
+                <span id="save-btn-label">Add bonus</span>
+              </button>
+            </div>
+            <div id="form-error" class="error-text" style="display:none;"></div>
+          </form>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Backup / restore</h3>
+          </div>
+          <p class="helper-text">
+            This app keeps everything in‑memory. Export a JSON backup to your computer and re‑import it later on any device.
+          </p>
+          <div class="actions-row" style="justify-content:flex-start;">
+            <button type="button" class="btn-secondary" id="export-btn">Export JSON</button>
+            <label class="btn-secondary" style="cursor:pointer; position:relative; overflow:hidden;">
+              Import JSON
+              <input type="file" id="import-file" accept="application/json" style="position:absolute; inset:0; opacity:0; cursor:pointer;">
+            </label>
+          </div>
+          <div id="import-error" class="error-text" style="display:none;"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <div class="panel-header">
+            <h2>Active & completed bonuses</h2>
+          </div>
+          <div class="table-toolbar">
+            <div class="table-toolbar-group">
+              <span class="tag" id="row-count-tag">0 bonuses</span>
+            </div>
+            <div class="table-toolbar-group">
+              <select id="filter-status" class="small-select">
+                <option value="all">All statuses</option>
+                <option value="open">Only open (not closed/cancelled)</option>
+                <option value="in_progress">In progress / requirements</option>
+                <option value="bonus_posted">Bonus posted</option>
+              </select>
+              <input type="text" id="search-text" class="inline-input" placeholder="Search bank or account">
+            </div>
+          </div>
+          <div class="table-wrapper" id="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bank / account</th>
+                  <th>Status</th>
+                  <th>Bonus</th>
+                  <th>Key dates</th>
+                  <th>Requirements / notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bonus-rows"></tbody>
+            </table>
+            <div class="empty-state" id="empty-state">
+              No bonuses yet. Add your first offer, then track your progress and repeat eligibility here.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function() {
+      const state = {
+        bonuses: [],
+        editingId: null
+      };
+
+      const currency = new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 2
+      });
+
+      const today = new Date();
+      const currentYear = today.getFullYear();
+
+      const el = (id) => document.getElementById(id);
+
+      const formEl = el('bonus-form');
+      const formErrorEl = el('form-error');
+      const importErrorEl = el('import-error');
+      const editingPillEl = el('editing-pill');
+      const formTitleEl = el('form-title');
+      const saveBtnLabelEl = el('save-btn-label');
+
+      const summaryExpectedEl = el('summary-expected');
+      const summaryReceivedEl = el('summary-received');
+      const summaryTaxYearEl = el('summary-tax-year');
+      const summaryTaxYearLabelEl = el('summary-tax-year-label');
+
+      const rowsTbodyEl = el('bonus-rows');
+      const emptyStateEl = el('empty-state');
+      const rowCountTagEl = el('row-count-tag');
+
+      const filterStatusEl = el('filter-status');
+      const searchTextEl = el('search-text');
+
+      const cooldownPresetEl = el('cooldownPreset');
+      const cooldownMonthsEl = el('cooldownMonths');
+
+      function serializeForm() {
+        return {
+          id: state.editingId || String(Date.now()),
+          bank: el('bank').value.trim(),
+          accountName: el('accountName').value.trim(),
+          bonusAmount: parseFloat(el('bonusAmount').value || '0'),
+          status: el('status').value,
+          dateOpened: el('dateOpened').value || null,
+          deadline: el('deadline').value || null,
+          dateRequirementsMet: el('dateRequirementsMet').value || null,
+          dateBonusPosted: el('dateBonusPosted').value || null,
+          dateClosed: el('dateClosed').value || null,
+          monthlyFee: el('monthlyFee').value ? parseFloat(el('monthlyFee').value) : null,
+          cooldownPreset: cooldownPresetEl.value,
+          cooldownMonths: cooldownMonthsEl.value
+            ? parseInt(cooldownMonthsEl.value, 10)
+            : null,
+          requirements: el('requirements').value.trim(),
+          feeWaiver: el('feeWaiver').value.trim(),
+          eligibilityNotes: el('eligibilityNotes').value.trim(),
+          sourceUrl: el('sourceUrl').value.trim(),
+          notes: el('notes').value.trim()
+        };
+      }
+
+      function resetForm() {
+        formEl.reset();
+        el('bonus-id').value = '';
+        state.editingId = null;
+        editingPillEl.style.display = 'none';
+        formTitleEl.textContent = 'Add bank bonus';
+        saveBtnLabelEl.textContent = 'Add bonus';
+        formErrorEl.style.display = 'none';
+        cooldownPresetEl.value = 'custom';
+        cooldownMonthsEl.disabled = false;
+      }
+
+      function validateForm(data) {
+        if (!data.bank) return 'Bank is required.';
+        if (!data.accountName) return 'Account name is required.';
+        if (!Number.isFinite(data.bonusAmount) || data.bonusAmount <= 0) return 'Bonus amount must be greater than 0.';
+        return null;
+      }
+
+      function upsertBonus(data) {
+        const idx = state.bonuses.findIndex(b => b.id === data.id);
+        if (idx === -1) {
+          state.bonuses.push(data);
+        } else {
+          state.bonuses[idx] = data;
+        }
+      }
+
+      function deleteBonus(id) {
+        const idx = state.bonuses.findIndex(b => b.id === id);
+        if (idx !== -1) {
+          state.bonuses.splice(idx, 1);
+        }
+      }
+
+      function formatDate(iso) {
+        if (!iso) return '';
+        const d = new Date(iso + 'T00:00:00');
+        if (Number.isNaN(d.getTime())) return iso;
+        return d.toLocaleDateString();
+      }
+
+      function getStatusLabel(status) {
+        switch (status) {
+          case 'planned': return 'Planned';
+          case 'in_progress': return 'In progress';
+          case 'requirements_met': return 'Reqs met / waiting';
+          case 'bonus_posted': return 'Bonus posted';
+          case 'closed': return 'Closed';
+          case 'cancelled': return 'Cancelled';
+          default: return status;
+        }
+      }
+
+      function isClosedLike(status) {
+        return status === 'closed' || status === 'cancelled';
+      }
+
+      function computeNextEligibility(b) {
+        if (!b.cooldownMonths || b.cooldownMonths <= 0) return null;
+
+        const baseIso = b.dateBonusPosted || b.dateClosed;
+        if (!baseIso) return null;
+
+        const d = new Date(baseIso + 'T00:00:00');
+        if (Number.isNaN(d.getTime())) return null;
+
+        const result = new Date(d);
+        result.setMonth(result.getMonth() + b.cooldownMonths);
+        return result;
+      }
+
+      function computeSummary() {
+        let expected = 0;
+        let received = 0;
+        let receivedThisYear = 0;
+
+        for (const b of state.bonuses) {
+          if (b.status !== 'cancelled') {
+            expected += b.bonusAmount || 0;
+          }
+          if (b.status === 'bonus_posted' || b.status === 'closed') {
+            received += b.bonusAmount || 0;
+            if (b.dateBonusPosted) {
+              const year = new Date(b.dateBonusPosted + 'T00:00:00').getFullYear();
+              if (year === currentYear) {
+                receivedThisYear += b.bonusAmount || 0;
+              }
+            }
+          }
+        }
+
+        summaryExpectedEl.textContent = currency.format(expected || 0);
+        summaryReceivedEl.textContent = currency.format(received || 0);
+        summaryTaxYearEl.textContent = currency.format(receivedThisYear || 0);
+        summaryTaxYearLabelEl.textContent = 'Tax year ' + currentYear;
+      }
+
+      function renderTable() {
+        const filter = filterStatusEl.value;
+        const search = searchTextEl.value.trim().toLowerCase();
+
+        const filtered = state.bonuses.filter(b => {
+          if (filter === 'open' && isClosedLike(b.status)) return false;
+          if (filter === 'in_progress' && !(b.status === 'in_progress' || b.status === 'requirements_met')) return false;
+          if (filter === 'bonus_posted' && b.status !== 'bonus_posted') return false;
+
+          if (search) {
+            const hay = (b.bank + ' ' + b.accountName).toLowerCase();
+            if (!hay.includes(search)) return false;
+          }
+          return true;
+        });
+
+        rowCountTagEl.textContent = `${filtered.length} bonus${filtered.length === 1 ? '' : 'es'}`;
+
+        rowsTbodyEl.innerHTML = '';
+
+        if (!filtered.length) {
+          emptyStateEl.style.display = 'block';
+          return;
+        } else {
+          emptyStateEl.style.display = 'none';
+        }
+
+        for (const b of filtered) {
+          const tr = document.createElement('tr');
+
+          const tdBank = document.createElement('td');
+          tdBank.className = 'cell-bank';
+          if (b.sourceUrl) {
+            const link = document.createElement('a');
+            link.href = b.sourceUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = b.bank;
+            tdBank.appendChild(link);
+          } else {
+            tdBank.textContent = b.bank;
+          }
+          const divAcc = document.createElement('div');
+          divAcc.style.fontSize = 'var(--text-xs)';
+          divAcc.style.color = 'var(--color-text-muted)';
+          divAcc.textContent = b.accountName;
+          tdBank.appendChild(divAcc);
+          tr.appendChild(tdBank);
+
+          const tdStatus = document.createElement('td');
+          const statusPill = document.createElement('span');
+          statusPill.className = 'pill pill-muted';
+          statusPill.textContent = getStatusLabel(b.status);
+          tdStatus.appendChild(statusPill);
+          tr.appendChild(tdStatus);
+
+          const tdBonus = document.createElement('td');
+          tdBonus.textContent = currency.format(b.bonusAmount || 0);
+          if (b.monthlyFee && b.monthlyFee > 0) {
+            const feeDiv = document.createElement('div');
+            feeDiv.style.fontSize = 'var(--text-xs)';
+            feeDiv.style.color = 'var(--color-text-muted)';
+            feeDiv.textContent = `Fee: ${currency.format(b.monthlyFee)}/mo`;
+            tdBonus.appendChild(feeDiv);
+          }
+          tr.appendChild(tdBonus);
+
+          const tdDates = document.createElement('td');
+          tdDates.style.fontSize = 'var(--text-xs)';
+          const parts = [];
+          if (b.dateOpened) parts.push('Opened: ' + formatDate(b.dateOpened));
+          if (b.deadline) parts.push('Deadline: ' + formatDate(b.deadline));
+          if (b.dateBonusPosted) parts.push('Bonus: ' + formatDate(b.dateBonusPosted));
+          if (b.dateClosed) parts.push('Closed: ' + formatDate(b.dateClosed));
+
+          const next = computeNextEligibility(b);
+          if (next) {
+            parts.push('Next eligible: ' + next.toLocaleDateString());
+          }
+
+          tdDates.textContent = parts.join(' • ');
+          tr.appendChild(tdDates);
+
+          const tdNotes = document.createElement('td');
+          tdNotes.className = 'cell-notes';
+          const req = b.requirements || '';
+          const notes = b.notes || '';
+          let text = '';
+          if (req) text += req;
+          if (notes) {
+            if (text) text += ' | ';
+            text += notes;
+          }
+          tdNotes.textContent = text || '—';
+          tr.appendChild(tdNotes);
+
+          const tdActions = document.createElement('td');
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'btn-secondary btn-sm';
+          editBtn.textContent = 'Edit';
+          editBtn.addEventListener('click', () => loadIntoForm(b.id));
+          tdActions.appendChild(editBtn);
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'btn-danger btn-sm';
+          delBtn.style.marginLeft = '0.35rem';
+          delBtn.textContent = 'Delete';
+          delBtn.addEventListener('click', () => {
+            if (confirm('Delete this bonus entry?')) {
+              deleteBonus(b.id);
+              renderAll();
+            }
+          });
+          tdActions.appendChild(delBtn);
+
+          tr.appendChild(tdActions);
+
+          rowsTbodyEl.appendChild(tr);
+        }
+      }
+
+      function loadIntoForm(id) {
+        const b = state.bonuses.find(b => b.id === id);
+        if (!b) return;
+        state.editingId = b.id;
+        formTitleEl.textContent = 'Edit bank bonus';
+        editingPillEl.style.display = 'inline-flex';
+        saveBtnLabelEl.textContent = 'Save changes';
+
+        el('bank').value = b.bank || '';
+        el('accountName').value = b.accountName || '';
+        el('bonusAmount').value = b.bonusAmount != null ? b.bonusAmount : '';
+        el('status').value = b.status || 'planned';
+        el('dateOpened').value = b.dateOpened || '';
+        el('deadline').value = b.deadline || '';
+        el('dateRequirementsMet').value = b.dateRequirementsMet || '';
+        el('dateBonusPosted').value = b.dateBonusPosted || '';
+        el('dateClosed').value = b.dateClosed || '';
+        el('monthlyFee').value = b.monthlyFee != null ? b.monthlyFee : '';
+        el('requirements').value = b.requirements || '';
+        el('feeWaiver').value = b.feeWaiver || '';
+        el('eligibilityNotes').value = b.eligibilityNotes || '';
+        el('sourceUrl').value = b.sourceUrl || '';
+        el('notes').value = b.notes || '';
+
+        cooldownPresetEl.value = b.cooldownPreset || 'custom';
+        cooldownMonthsEl.value = b.cooldownMonths != null ? b.cooldownMonths : '';
+        cooldownMonthsEl.disabled = cooldownPresetEl.value === 'lifetime';
+
+        formErrorEl.style.display = 'none';
+      }
+
+      function renderAll() {
+        computeSummary();
+        renderTable();
+      }
+
+      formEl.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const data = serializeForm();
+        const err = validateForm(data);
+        if (err) {
+          formErrorEl.textContent = err;
+          formErrorEl.style.display = 'block';
+          return;
+        }
+        formErrorEl.style.display = 'none';
+        upsertBonus(data);
+        resetForm();
+        renderAll();
+      });
+
+      el('reset-btn').addEventListener('click', (e) => {
+        e.preventDefault();
+        resetForm();
+      });
+
+      filterStatusEl.addEventListener('change', renderTable);
+      searchTextEl.addEventListener('input', renderTable);
+
+      cooldownPresetEl.addEventListener('change', () => {
+        const val = cooldownPresetEl.value;
+        if (val === '12' || val === '24') {
+          cooldownMonthsEl.disabled = false;
+          cooldownMonthsEl.value = val;
+        } else if (val === 'lifetime') {
+          cooldownMonthsEl.value = '';
+          cooldownMonthsEl.disabled = true;
+        } else {
+          cooldownMonthsEl.disabled = false;
+        }
+      });
+
+      el('export-btn').addEventListener('click', () => {
+        const dataStr = JSON.stringify(state.bonuses, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const stamp = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `bank-bonus-tracker-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      el('import-file').addEventListener('change', (evt) => {
+        importErrorEl.style.display = 'none';
+        const file = evt.target.files && evt.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          try {
+            const parsed = JSON.parse(e.target.result);
+            if (!Array.isArray(parsed)) throw new Error('JSON must be an array of bonus objects');
+            state.bonuses = parsed.map((b) => ({
+              id: b.id || String(Date.now() + Math.random()),
+              bank: b.bank || '',
+              accountName: b.accountName || '',
+              bonusAmount: Number.isFinite(b.bonusAmount) ? b.bonusAmount : parseFloat(b.bonusAmount || '0') || 0,
+              status: b.status || 'planned',
+              dateOpened: b.dateOpened || null,
+              deadline: b.deadline || null,
+              dateRequirementsMet: b.dateRequirementsMet || null,
+              dateBonusPosted: b.dateBonusPosted || null,
+              dateClosed: b.dateClosed || null,
+              monthlyFee: b.monthlyFee != null ? (Number.isFinite(b.monthlyFee) ? b.monthlyFee : parseFloat(b.monthlyFee)) : null,
+              cooldownPreset: b.cooldownPreset || 'custom',
+              cooldownMonths: b.cooldownMonths != null
+                ? parseInt(b.cooldownMonths, 10)
+                : null,
+              requirements: b.requirements || '',
+              feeWaiver: b.feeWaiver || '',
+              eligibilityNotes: b.eligibilityNotes || '',
+              sourceUrl: b.sourceUrl || '',
+              notes: b.notes || ''
+            }));
+            resetForm();
+            renderAll();
+          } catch (err) {
+            importErrorEl.textContent = 'Import failed: ' + err.message;
+            importErrorEl.style.display = 'block';
+          } finally {
+            evt.target.value = '';
+          }
+        };
+        reader.readAsText(file);
+      });
+
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

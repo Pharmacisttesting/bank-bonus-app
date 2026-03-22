@@ -9,6 +9,7 @@
   <script>
     const GOOGLE_CLIENT_ID = '35195643841-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
     const GOOGLE_API_KEY = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
+    const DRIVE_FOLDER_ID = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
     const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
@@ -849,54 +850,59 @@
         }
       }
 
-      async function ensureDriveFileId() {
-        if (driveFileId) return driveFileId;
+async function ensureDriveFileId() {
+  if (driveFileId) return driveFileId;
 
-        // Try cached ID
-        const savedId = window.localStorage.getItem(DRIVE_FILE_ID_KEY);
-        if (savedId) {
-          try {
-            const res = await gapi.client.drive.files.get({
-              fileId: savedId,
-              fields: 'id',
-            });
-            if (res.result && res.result.id) {
-              driveFileId = res.result.id;
-              return driveFileId;
-            }
-          } catch (e) {
-            console.warn('Stored Drive file ID invalid, will recreate.', e);
-          }
-        }
-
-        // Try to find by name
-        const listRes = await gapi.client.drive.files.list({
-          q: "name = 'bank-bonuses-data.json' and trashed = false",
-          pageSize: 1,
-          fields: 'files(id, name)',
-        });
-        if (listRes.result.files && listRes.result.files.length > 0) {
-          driveFileId = listRes.result.files[0].id;
-          window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-          return driveFileId;
-        }
-
-        // Create new file with empty array
-        const createRes = await gapi.client.drive.files.create({
-          resource: {
-            name: 'bank-bonuses-data.json',
-            mimeType: 'application/json',
-          },
-          media: {
-            mimeType: 'application/json',
-            body: JSON.stringify([]),
-          },
-          fields: 'id',
-        });
-        driveFileId = createRes.result.id;
-        window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+  // Try cached ID from this browser
+  const savedId = window.localStorage.getItem(DRIVE_FILE_ID_KEY);
+  if (savedId) {
+    try {
+      const res = await gapi.client.drive.files.get({
+        fileId: savedId,
+        fields: 'id',
+      });
+      if (res.result && res.result.id) {
+        driveFileId = res.result.id;
         return driveFileId;
       }
+    } catch (e) {
+      console.warn('Stored Drive file ID invalid, will recreate.', e);
+    }
+  }
+
+  // Look for the JSON file inside the dedicated folder
+  const listRes = await gapi.client.drive.files.list({
+    q:
+      "name = 'bank-bonuses-data.json' and trashed = false and '" +
+      DRIVE_FOLDER_ID +
+      "' in parents",
+    pageSize: 1,
+    fields: 'files(id, name)',
+  });
+  if (listRes.result.files && listRes.result.files.length > 0) {
+    driveFileId = listRes.result.files[0].id;
+    window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+    return driveFileId;
+  }
+
+  // Create a new file in that folder with an empty array
+  const createRes = await gapi.client.drive.files.create({
+    resource: {
+      name: 'bank-bonuses-data.json',
+      mimeType: 'application/json',
+      parents: [DRIVE_FOLDER_ID],
+    },
+    media: {
+      mimeType: 'application/json',
+      body: JSON.stringify([]),
+    },
+    fields: 'id',
+  });
+  driveFileId = createRes.result.id;
+  window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+  return driveFileId;
+}
+
 
       async function loadFromDrive() {
         const fileId = await ensureDriveFileId();

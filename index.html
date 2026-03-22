@@ -7,7 +7,7 @@
 
   <!-- Google Drive config -->
   <script>
-    const GOOGLE_CLIENT_ID = '35195643841-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
+    const GOOGLE_CLIENT_ID = '3.5195643841e+10-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
     const GOOGLE_API_KEY   = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
     const DRIVE_FOLDER_ID  = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
 
@@ -33,7 +33,7 @@
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: GOOGLE_SCOPES,
-        callback: '', // set later
+        callback: '',
       });
       gisInited = true;
       maybeEnableDriveButtons();
@@ -57,13 +57,8 @@
       --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
       --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
 
-      --space-1: 0.25rem;
-      --space-2: 0.5rem;
-      --space-3: 0.75rem;
-      --space-4: 1rem;
-      --space-6: 1.5rem;
-      --space-8: 2rem;
-      --space-12: 3rem;
+      --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+      --space-4: 1rem; --space-6: 1.5rem; --space-8: 2rem; --space-12: 3rem;
 
       --color-bg: #f7f6f2;
       --color-surface: #fbfbf9;
@@ -74,59 +69,42 @@
       --color-primary: #01696f;
       --color-primary-soft: #cedcd8;
       --color-error: #a12c7b;
+      --color-warn: #b45309;
+      --color-warn-soft: #fef3c7;
+      --color-danger-soft: #fee2e2;
 
-      --radius-sm: 0.375rem;
-      --radius-md: 0.5rem;
-      --radius-lg: 0.75rem;
-
+      --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
       --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-
-      --content-max: 1120px;
+      --content-max: 1200px;
       --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --color-bg: #171614;
-        --color-surface: #201f1d;
-        --color-surface-alt: #262523;
-        --color-border: #393836;
-        --color-text: #cdccca;
-        --color-text-muted: #797876;
-        --color-primary: #4f98a3;
-        --color-primary-soft: #313b3b;
+        --color-bg: #171614; --color-surface: #201f1d;
+        --color-surface-alt: #262523; --color-border: #393836;
+        --color-text: #cdccca; --color-text-muted: #797876;
+        --color-primary: #4f98a3; --color-primary-soft: #313b3b;
         --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
         --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+        --color-warn-soft: #3b2a00; --color-danger-soft: #3b0a0a;
       }
     }
 
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    html {
-      text-size-adjust: none;
-      scroll-behavior: smooth;
-    }
-
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { text-size-adjust: none; scroll-behavior: smooth; }
     body {
       min-height: 100vh;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: var(--text-base);
-      line-height: 1.6;
-      color: var(--color-text);
+      font-size: var(--text-base); line-height: 1.6; color: var(--color-text);
       background: radial-gradient(circle at top, #ffffff 0, var(--color-bg) 45%, var(--color-bg) 100%);
       padding: var(--space-6) var(--space-4);
-      display: flex;
-      justify-content: center;
+      display: flex; justify-content: center;
     }
 
     .app-shell {
-      width: 100%;
-      max-width: var(--content-max);
+      width: 100%; max-width: var(--content-max);
       background: var(--color-surface);
       border-radius: var(--radius-lg);
       box-shadow: var(--shadow-md);
@@ -135,474 +113,184 @@
     }
 
     @media (max-width: 768px) {
-      body {
-        padding: var(--space-4);
-      }
-      .app-shell {
-        padding: var(--space-4);
-        border-radius: var(--radius-md);
-      }
+      body { padding: var(--space-4); }
+      .app-shell { padding: var(--space-4); border-radius: var(--radius-md); }
     }
 
-    h1, h2, h3 {
-      line-height: 1.2;
-    }
-
-    h1 {
-      font-size: var(--text-xl);
-      margin-bottom: var(--space-2);
-    }
-
-    h2 {
-      font-size: var(--text-lg);
-      margin-bottom: var(--space-2);
-    }
-
-    h3 {
-      font-size: var(--text-base);
-      margin-bottom: var(--space-1);
-    }
-
-    p {
-      margin-bottom: var(--space-2);
-      color: var(--color-text-muted);
-    }
-
-    a {
-      color: var(--color-primary);
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { font-size: var(--text-xl); margin-bottom: var(--space-2); }
+    h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
+    h3 { font-size: var(--text-base); margin-bottom: var(--space-1); }
+    p { margin-bottom: var(--space-2); color: var(--color-text-muted); }
+    a { color: var(--color-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     .header {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: var(--space-4);
-      margin-bottom: var(--space-6);
+      display: flex; flex-wrap: wrap; align-items: flex-start;
+      justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6);
     }
-
-    .header-main {
-      max-width: 32rem;
-    }
+    .header-main { max-width: 32rem; }
 
     .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.1rem 0.6rem;
-      border-radius: 999px;
-      background: var(--color-primary-soft);
-      color: var(--color-primary);
-      font-size: var(--text-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-weight: 600;
-      margin-bottom: var(--space-2);
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.1rem 0.6rem; border-radius: 999px;
+      background: var(--color-primary-soft); color: var(--color-primary);
+      font-size: var(--text-xs); text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 600; margin-bottom: var(--space-2);
     }
 
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: var(--space-4);
-      margin-bottom: var(--space-6);
+      gap: var(--space-4); margin-bottom: var(--space-4);
     }
-
-    @media (max-width: 1024px) {
-      .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-    }
-
-    @media (max-width: 520px) {
-      .summary-grid {
-        grid-template-columns: 1fr;
-      }
-    }
+    @media (max-width: 1024px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 520px) { .summary-grid { grid-template-columns: 1fr; } }
 
     .summary-card {
-      background: var(--color-surface-alt);
-      border-radius: var(--radius-md);
-      padding: var(--space-4);
-      box-shadow: var(--shadow-sm);
+      background: var(--color-surface-alt); border-radius: var(--radius-md);
+      padding: var(--space-4); box-shadow: var(--shadow-sm);
       border: 1px solid var(--color-border);
     }
+    .summary-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 0.35rem; }
+    .summary-value { font-size: var(--text-lg); font-weight: 600; }
+    .summary-sub { font-size: var(--text-xs); color: var(--color-text-muted); }
 
-    .summary-label {
-      font-size: var(--text-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--color-text-muted);
-      margin-bottom: 0.35rem;
+    /* Person tabs */
+    .person-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); flex-wrap: wrap; }
+    .person-tab {
+      padding: 0.3rem 1rem; border-radius: 999px; border: 1px solid var(--color-border);
+      background: var(--color-surface); cursor: pointer; font-size: var(--text-sm);
+      transition: all var(--transition);
     }
+    .person-tab.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 
-    .summary-value {
-      font-size: var(--text-lg);
-      font-weight: 600;
+    /* Pipeline / Kanban */
+    .pipeline {
+      display: flex; gap: var(--space-2); overflow-x: auto;
+      padding-bottom: var(--space-2); margin-bottom: var(--space-4);
     }
+    .pipeline-stage {
+      flex: 0 0 auto; min-width: 110px; background: var(--color-surface-alt);
+      border-radius: var(--radius-md); border: 1px solid var(--color-border);
+      padding: var(--space-3); text-align: center;
+    }
+    .pipeline-stage-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 0.25rem; }
+    .pipeline-stage-count { font-size: var(--text-lg); font-weight: 700; color: var(--color-primary); }
 
-    .summary-sub {
-      font-size: var(--text-xs);
-      color: var(--color-text-muted);
+    /* This week widget */
+    .week-widget {
+      background: var(--color-surface-alt); border: 1px solid var(--color-border);
+      border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-4);
     }
+    .week-widget h3 { color: var(--color-primary); margin-bottom: var(--space-2); }
+    .week-item { font-size: var(--text-sm); padding: 0.2rem 0; border-bottom: 1px solid var(--color-border); }
+    .week-item:last-child { border-bottom: none; }
+    .week-empty { font-size: var(--text-sm); color: var(--color-text-muted); }
 
     .panel {
-      background: var(--color-surface-alt);
-      border-radius: var(--radius-md);
-      padding: var(--space-4);
-      border: 1px solid var(--color-border);
+      background: var(--color-surface-alt); border-radius: var(--radius-md);
+      padding: var(--space-4); border: 1px solid var(--color-border);
     }
-
-    .panel + .panel {
-      margin-top: var(--space-4);
-    }
-
+    .panel + .panel { margin-top: var(--space-4); }
     .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-2);
-      margin-bottom: var(--space-2);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--space-2); margin-bottom: var(--space-2);
     }
-
-    .panel-header h2,
-    .panel-header h3 {
-      margin-bottom: 0;
-    }
+    .panel-header h2, .panel-header h3 { margin-bottom: 0; }
 
     .field-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--space-3) var(--space-4);
     }
+    @media (max-width: 640px) { .field-grid { grid-template-columns: 1fr; } }
 
-    @media (max-width: 640px) {
-      .field-grid {
-        grid-template-columns: 1fr;
-      }
+    label { display: block; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 0.25rem; }
+
+    input[type="text"], input[type="number"], input[type="date"], select, textarea {
+      width: 100%; padding: 0.45rem 0.6rem; font-size: var(--text-sm);
+      border-radius: var(--radius-sm); border: 1px solid var(--color-border);
+      background: var(--color-surface); color: var(--color-text);
+      outline: none; transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    input::placeholder, textarea::placeholder { color: var(--color-text-muted); opacity: 0.8; }
+    textarea { min-height: 5.5rem; resize: vertical; }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary-soft);
+    }
+    .field-full { grid-column: 1 / -1; }
+    .field-section-header {
+      grid-column: 1 / -1; font-size: var(--text-xs); text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--color-primary); font-weight: 700;
+      padding-top: var(--space-3); border-top: 1px solid var(--color-border); margin-top: var(--space-2);
     }
 
-    label {
-      display: block;
-      font-size: var(--text-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--color-text-muted);
-      margin-bottom: 0.25rem;
-    }
-
-    input[type="text"],
-    input[type="number"],
-    input[type="date"],
-    select,
-    textarea {
-      width: 100%;
-      padding: 0.45rem 0.6rem;
-      font-size: var(--text-sm);
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-      color: var(--color-text);
-      outline: none;
-      transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
-    }
-
-    input::placeholder,
-    textarea::placeholder {
-      color: var(--color-text-muted);
-      opacity: 0.8;
-    }
-
-    textarea {
-      min-height: 5.5rem;
-      resize: vertical;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 1px var(--color-primary-soft);
-      background: #ffffff10;
-    }
-
-    .field-full {
-      grid-column: 1 / -1;
-    }
-
-    .actions-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-2);
-      justify-content: flex-end;
-      margin-top: var(--space-4);
-    }
+    .actions-row { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-4); }
 
     button {
-      border-radius: 999px;
-      border: 1px solid transparent;
-      padding: 0.4rem 0.9rem;
-      font-size: var(--text-sm);
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      cursor: pointer;
-      background: none;
-      color: inherit;
+      border-radius: 999px; border: 1px solid transparent; padding: 0.4rem 0.9rem;
+      font-size: var(--text-sm); display: inline-flex; align-items: center; gap: 0.35rem;
+      cursor: pointer; background: none; color: inherit;
       transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
     }
+    button:disabled { opacity: 0.5; cursor: default; }
 
-    button:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
+    .btn-primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+    .btn-primary:hover:not(:disabled) { background: #0c4e54; border-color: #0c4e54; transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .btn-secondary { border-color: var(--color-border); background: var(--color-surface); }
+    .btn-secondary:hover:not(:disabled) { background: var(--color-surface-alt); }
+    .btn-danger { border-color: var(--color-error); color: var(--color-error); background: var(--color-surface); }
+    .btn-danger:hover:not(:disabled) { background: rgba(161,44,123,0.08); }
+    .btn-sm { padding: 0.25rem 0.6rem; font-size: var(--text-xs); }
 
-    .btn-primary {
-      background: var(--color-primary);
-      color: #fff;
-      border-color: var(--color-primary);
-      box-shadow: var(--shadow-sm);
-    }
-    .btn-primary:hover:not(:disabled) {
-      background: #0c4e54;
-      border-color: #0c4e54;
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-md);
-    }
+    .pill { display: inline-flex; align-items: center; justify-content: center; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: var(--text-xs); background: var(--color-primary-soft); color: var(--color-primary); white-space: nowrap; }
+    .pill-muted { background: #00000010; color: var(--color-text-muted); }
 
-    .btn-secondary {
-      border-color: var(--color-border);
-      background: var(--color-surface);
-    }
-    .btn-secondary:hover:not(:disabled) {
-      background: var(--color-surface-alt);
-    }
+    .table-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
+    .table-toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+    .small-select { padding-inline: 0.6rem 1.8rem; font-size: var(--text-xs); }
 
-    .btn-danger {
-      border-color: var(--color-error);
-      color: var(--color-error);
-      background: var(--color-surface);
-    }
-    .btn-danger:hover:not(:disabled) {
-      background: rgba(161,44,123,0.08);
-    }
+    .table-wrapper { max-height: 640px; overflow: auto; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); }
+    table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+    thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface-alt); }
+    th, td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+    th { text-align: left; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); background: var(--color-surface-alt); }
+    tbody tr:hover { background: rgba(1,105,111,0.06); }
 
-    .btn-sm {
-      padding: 0.25rem 0.6rem;
-      font-size: var(--text-xs);
-    }
+    /* Urgency row colors */
+    tbody tr.urgency-red { background: var(--color-danger-soft) !important; }
+    tbody tr.urgency-yellow { background: var(--color-warn-soft) !important; }
+    tbody tr.urgency-red:hover { background: #fecaca !important; }
+    tbody tr.urgency-yellow:hover { background: #fde68a40 !important; }
 
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.15rem 0.6rem;
-      border-radius: 999px;
-      font-size: var(--text-xs);
-      background: var(--color-primary-soft);
-      color: var(--color-primary);
-      white-space: nowrap;
-    }
+    .cell-bank { font-weight: 600; }
+    .cell-notes { max-width: 18rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; color: var(--color-text-muted); }
 
-    .pill-muted {
-      background: #00000010;
-      color: var(--color-text-muted);
-    }
+    .empty-state { padding: var(--space-4); text-align: center; color: var(--color-text-muted); font-size: var(--text-sm); }
 
-    .table-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-2);
-      margin-bottom: var(--space-3);
-    }
+    .tag { display: inline-flex; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: var(--text-xs); border: 1px solid rgba(0,0,0,0.06); background: rgba(0,0,0,0.02); color: var(--color-text-muted); white-space: nowrap; }
+    .tag-person-you { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+    .tag-person-spouse { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
+    .tag-person-joint { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .tag-repeat-ready { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
 
-    .table-toolbar-group {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: var(--space-2);
-    }
+    .error-text { color: var(--color-error); font-size: var(--text-xs); margin-top: 0.25rem; }
+    .helper-text { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 0.1rem; }
+    .inline-input { max-width: 180px; }
 
-    .small-select {
-      padding-inline: 0.6rem 1.8rem;
-      font-size: var(--text-xs);
-    }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal-dialog { max-width: 780px; width: 100%; max-height: 92vh; overflow: auto; }
+    @media (max-width: 768px) { .modal-dialog { max-width: 100%; margin: 0 var(--space-2); } }
 
-    .table-wrapper {
-      max-height: 640px;
-      overflow: auto;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: var(--text-sm);
-    }
-
-    thead {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: var(--color-surface-alt);
-    }
-
-    th, td {
-      padding: 0.6rem 0.9rem;
-      border-bottom: 1px solid var(--color-border);
-      vertical-align: top;
-    }
-
-    th {
-      text-align: left;
-      font-size: var(--text-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--color-text-muted);
-      background: var(--color-surface-alt);
-    }
-
-    tbody tr:hover {
-      background: rgba(1,105,111,0.06);
-    }
-
-    .cell-bank {
-      font-weight: 600;
-    }
-
-    .cell-notes {
-      max-width: 24rem;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      overflow: hidden;
-      color: var(--color-text-muted);
-    }
-
-    .empty-state {
-      padding: var(--space-4);
-      text-align: center;
-      color: var(--color-text-muted);
-      font-size: var(--text-sm);
-    }
-
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      padding: 0.1rem 0.5rem;
-      border-radius: 999px;
-      font-size: var(--text-xs);
-      border: 1px solid rgba(0,0,0,0.06);
-      background: rgba(0,0,0,0.02);
-      color: var(--color-text-muted);
-      white-space: nowrap;
-    }
-
-    .error-text {
-      color: var(--color-error);
-      font-size: var(--text-xs);
-      margin-top: 0.25rem;
-    }
-
-    .helper-text {
-      font-size: var(--text-xs);
-      color: var(--color-text-muted);
-      margin-top: 0.1rem;
-    }
-
-    .inline-input {
-      max-width: 180px;
-    }
-
-    /* Modal */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.45);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 50;
-    }
-
-    .modal-dialog {
-      max-width: 720px;
-      width: 100%;
-      max-height: 90vh;
-      overflow: auto;
-    }
-
-    @media (max-width: 768px) {
-      .modal-dialog {
-        max-width: 100%;
-        margin: 0 var(--space-2);
-      }
-    }
-
-    /* Mobile card layout for the table */
     @media (max-width: 720px) {
-      .table-wrapper {
-        max-height: none;
-        overflow-x: visible;
-        border: none;
-        background: transparent;
-      }
-
-      table {
-        border-collapse: separate;
-        border-spacing: 0 0.75rem;
-      }
-
-      thead {
-        display: none;
-      }
-
-      tbody tr {
-        display: block;
-        background: var(--color-surface);
-        border-radius: var(--radius-md);
-        box-shadow: var(--shadow-sm);
-        padding: var(--space-3) var(--space-3);
-        border: 1px solid var(--color-border);
-      }
-
-      tbody td {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding: 0.25rem 0;
-        border-bottom: none;
-      }
-
-      tbody td::before {
-        content: attr(data-label);
-        font-size: var(--text-xs);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--color-text-muted);
-        margin-right: var(--space-2);
-        white-space: nowrap;
-      }
-
-      .cell-bank {
-        font-weight: 600;
-      }
-
-      .cell-notes {
-        max-width: none;
-        white-space: normal;
-      }
-
-      td[data-label="Actions"] {
-        justify-content: flex-end;
-        margin-top: var(--space-2);
-      }
+      .table-wrapper { max-height: none; overflow-x: visible; border: none; background: transparent; }
+      table { border-collapse: separate; border-spacing: 0 0.75rem; }
+      thead { display: none; }
+      tbody tr { display: block; background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: var(--space-3); border: 1px solid var(--color-border); }
+      tbody td { display: flex; justify-content: space-between; align-items: flex-start; padding: 0.25rem 0; border-bottom: none; }
+      tbody td::before { content: attr(data-label); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-right: var(--space-2); white-space: nowrap; }
+      .cell-notes { max-width: none; white-space: normal; }
+      td[data-label="Actions"] { justify-content: flex-end; margin-top: var(--space-2); }
     }
   </style>
 </head>
@@ -614,22 +302,17 @@
         <h1>Bank Bonus Tracker</h1>
         <p>
           Track every checking and savings bonus: requirements, deadlines, fees, payout dates, and when
-          you can repeat. Pair this with
-          <a href="https://www.doctorofcredit.com/best-bank-account-bonuses/" target="_blank" rel="noopener noreferrer">
-            Doctor of Credit’s bonus lists
-          </a>
-          to find new offers.
+          you can repeat. Pair with
+          <a href="https://www.doctorofcredit.com/best-bank-account-bonuses/" target="_blank" rel="noopener noreferrer">Doctor of Credit</a> to find new offers.
         </p>
       </div>
       <div>
         <h3>Workflow tips</h3>
-        <p>
-          1) Connect Google Drive, 2) add offers with terms, 3) meet requirements, 4) update bonus / close
-          dates, 5) use cooldown + reminders to know when to close and when you can repeat.
-        </p>
+        <p>1) Connect Google Drive, 2) add offers with terms, 3) meet requirements, 4) update bonus / close dates, 5) use cooldown + reminders to know when to close and when you can repeat.</p>
       </div>
     </header>
 
+    <!-- Summary cards -->
     <section class="summary-grid" id="summary">
       <div class="summary-card">
         <div class="summary-label">Expected bonuses</div>
@@ -653,12 +336,59 @@
       </div>
     </section>
 
-    <!-- Big full-width table panel -->
+    <!-- Per-person breakdown -->
+    <section class="summary-grid" id="person-summary" style="margin-top:0; margin-bottom:var(--space-4);">
+      <div class="summary-card">
+        <div class="summary-label">You — Expected</div>
+        <div class="summary-value" id="ps-you-expected">$0</div>
+        <div class="summary-sub" id="ps-you-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Spouse — Expected</div>
+        <div class="summary-value" id="ps-spouse-expected">$0</div>
+        <div class="summary-sub" id="ps-spouse-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Joint — Expected</div>
+        <div class="summary-value" id="ps-joint-expected">$0</div>
+        <div class="summary-sub" id="ps-joint-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Avg $/day (open accounts)</div>
+        <div class="summary-value" id="ps-avg-roi">—</div>
+        <div class="summary-sub">Bonus ÷ days open</div>
+      </div>
+    </section>
+
+    <!-- Pipeline Kanban -->
+    <div class="pipeline" id="pipeline-bar">
+      <div class="pipeline-stage"><div class="pipeline-stage-label">Planned</div><div class="pipeline-stage-count" id="pipe-planned">0</div></div>
+      <div class="pipeline-stage"><div class="pipeline-stage-label">In Progress</div><div class="pipeline-stage-count" id="pipe-in_progress">0</div></div>
+      <div class="pipeline-stage"><div class="pipeline-stage-label">Req Met</div><div class="pipeline-stage-count" id="pipe-requirements_met">0</div></div>
+      <div class="pipeline-stage"><div class="pipeline-stage-label">Posted</div><div class="pipeline-stage-count" id="pipe-bonus_posted">0</div></div>
+      <div class="pipeline-stage"><div class="pipeline-stage-label">Closing</div><div class="pipeline-stage-count" id="pipe-closing">0</div></div>
+      <div class="pipeline-stage"><div class="pipeline-stage-label">Closed</div><div class="pipeline-stage-count" id="pipe-closed">0</div></div>
+    </div>
+
+    <!-- This Week Widget -->
+    <div class="week-widget" id="week-widget">
+      <h3>📅 This Week's Actions</h3>
+      <div id="week-list"><span class="week-empty">Nothing urgent this week.</span></div>
+    </div>
+
+    <!-- Person filter tabs -->
+    <div class="person-tabs" id="person-tabs">
+      <button class="person-tab active" data-person="all">All</button>
+      <button class="person-tab" data-person="you">You</button>
+      <button class="person-tab" data-person="spouse">Spouse</button>
+      <button class="person-tab" data-person="joint">Joint</button>
+    </div>
+
+    <!-- Main table panel -->
     <section class="panel">
       <div class="panel-header">
         <h2>Active & completed bonuses</h2>
         <div class="table-toolbar-group">
-          <!-- Disabled until Drive is connected -->
           <button type="button" class="btn-primary" id="open-form-btn" disabled>Add / edit bonus</button>
         </div>
       </div>
@@ -672,6 +402,8 @@
             <option value="open">Only open (not closed/cancelled)</option>
             <option value="in_progress">In progress / requirements</option>
             <option value="bonus_posted">Bonus posted</option>
+            <option value="ready_to_close">Ready to close</option>
+            <option value="repeat_ready">Repeat eligible</option>
           </select>
           <input type="text" id="search-text" class="inline-input" placeholder="Search bank or account">
         </div>
@@ -681,6 +413,7 @@
           <thead>
             <tr>
               <th>Bank / account</th>
+              <th>Person</th>
               <th>Status</th>
               <th>Bonus</th>
               <th>Key dates</th>
@@ -690,43 +423,33 @@
           </thead>
           <tbody id="bonus-rows"></tbody>
         </table>
-        <div class="empty-state" id="empty-state">
-          No bonuses yet. Connect Drive, then add your first offer and track progress and repeats here.
-        </div>
+        <div class="empty-state" id="empty-state">No bonuses yet. Connect Drive, then add your first offer.</div>
       </div>
     </section>
 
     <!-- Reminders -->
     <section class="panel" id="reminders-panel">
-      <div class="panel-header">
-        <h3>Upcoming repeats & deadlines</h3>
-      </div>
-      <p class="helper-text" id="reminders-empty">
-        No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.
-      </p>
+      <div class="panel-header"><h3>Upcoming repeats & deadlines</h3></div>
+      <p class="helper-text" id="reminders-empty">No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.</p>
       <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
     </section>
 
     <!-- Backup / Drive -->
     <section class="panel">
-      <div class="panel-header">
-        <h3>Backup & Google Drive</h3>
-      </div>
+      <div class="panel-header"><h3>Backup & Google Drive</h3></div>
       <p class="helper-text">
         Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync there too.
-        A separate Google Apps Script can read the same JSON daily to send email / SMS reminders.
+        On connect, existing Drive data will be loaded automatically.
       </p>
       <div class="actions-row" style="justify-content:flex-start;">
         <button type="button" class="btn-secondary" id="drive-connect-btn" disabled>Connect Drive</button>
         <button type="button" class="btn-secondary" id="drive-save-btn" disabled>Save to Drive</button>
       </div>
-      <span class="helper-text" id="drive-status" style="margin-top:0.5rem; display:block;">
-        Not connected to Drive.
-      </span>
+      <span class="helper-text" id="drive-status" style="margin-top:0.5rem; display:block;">Not connected to Drive.</span>
     </section>
   </div>
 
-  <!-- Modal for Add/Edit bonus -->
+  <!-- Modal -->
   <div class="modal-backdrop" id="form-modal">
     <div class="modal-dialog">
       <div class="panel" id="form-panel">
@@ -740,13 +463,30 @@
         <form id="bonus-form">
           <input type="hidden" id="bonus-id" value="">
           <div class="field-grid">
+
+            <!-- SECTION: Core Info -->
+            <div class="field-section-header">Core Info</div>
+
+            <div>
+              <label for="person">Person</label>
+              <select id="person">
+                <option value="you">You</option>
+                <option value="spouse">Spouse</option>
+                <option value="joint">Joint</option>
+              </select>
+            </div>
             <div>
               <label for="bank">Bank</label>
               <input id="bank" type="text" required placeholder="e.g., BMO, Chase, SoFi">
             </div>
+
             <div>
               <label for="accountName">Account name</label>
               <input id="accountName" type="text" required placeholder="e.g., Smart Advantage Checking">
+            </div>
+            <div>
+              <label for="accountLast4">Account # (last 4)</label>
+              <input id="accountLast4" type="text" maxlength="4" placeholder="e.g., 4821">
             </div>
 
             <div>
@@ -756,15 +496,20 @@
             <div>
               <label for="loginLabel">Login label (no password)</label>
               <input id="loginLabel" type="text" placeholder="e.g., WF Checking (see password manager)">
-              <div class="helper-text">
-                Do not store real passwords here; just a nickname or hint.
-              </div>
             </div>
 
+            <!-- SECTION: Bonus & Status -->
+            <div class="field-section-header">Bonus & Status</div>
+
             <div>
-              <label for="bonusAmount">Bonus amount</label>
+              <label for="bonusAmount">Bonus amount ($)</label>
               <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g., 400">
             </div>
+            <div>
+              <label for="referralBonus">Referral bonus amount ($)</label>
+              <input id="referralBonus" type="number" step="0.01" min="0" placeholder="e.g., 50">
+            </div>
+
             <div>
               <label for="status">Status</label>
               <select id="status" required>
@@ -778,33 +523,110 @@
                 <option value="cancelled">Cancelled / denied</option>
               </select>
             </div>
+            <div>
+              <label for="perHousehold">Bonus rule</label>
+              <select id="perHousehold">
+                <option value="per_person">Per person</option>
+                <option value="per_household">Per household (address)</option>
+                <option value="lifetime_person">Lifetime once per person</option>
+                <option value="lifetime_household">Lifetime once per household</option>
+              </select>
+            </div>
+
+            <!-- SECTION: Dates -->
+            <div class="field-section-header">Dates</div>
 
             <div>
               <label for="dateOpened">Date opened</label>
               <input id="dateOpened" type="date">
             </div>
             <div>
+              <label for="offerExpiration">Offer expiration date</label>
+              <input id="offerExpiration" type="date">
+              <div class="helper-text">When the sign-up offer itself expires.</div>
+            </div>
+
+            <div>
               <label for="deadline">Deadline to meet requirements</label>
               <input id="deadline" type="date">
             </div>
-
             <div>
               <label for="dateRequirementsMet">Date requirements met</label>
               <input id="dateRequirementsMet" type="date">
             </div>
+
             <div>
               <label for="dateBonusPosted">Date bonus posted</label>
               <input id="dateBonusPosted" type="date">
             </div>
-
             <div>
               <label for="dateClosed">Date closed</label>
               <input id="dateClosed" type="date">
             </div>
+
+            <!-- SECTION: Requirements -->
+            <div class="field-section-header">Requirements</div>
+
             <div>
-              <label for="monthlyFee">Monthly fee (if any)</label>
+              <label for="minBalance">Minimum balance required ($)</label>
+              <input id="minBalance" type="number" step="0.01" min="0" placeholder="e.g., 1500">
+            </div>
+            <div>
+              <label for="minBalanceDays">Min balance hold duration (days)</label>
+              <input id="minBalanceDays" type="number" min="0" step="1" placeholder="e.g., 60">
+            </div>
+
+            <div>
+              <label for="ddAmount">Direct deposit amount ($)</label>
+              <input id="ddAmount" type="number" step="0.01" min="0" placeholder="e.g., 4000">
+            </div>
+            <div>
+              <label for="ddCount">DD count required</label>
+              <input id="ddCount" type="number" min="0" step="1" placeholder="e.g., 2">
+            </div>
+
+            <div class="field-full">
+              <label for="ddMethods">DD methods that worked</label>
+              <input id="ddMethods" type="text" placeholder="e.g., Plaid/Gusto payroll, ACH from Chase, Venmo">
+            </div>
+
+            <div>
+              <label for="chexSystems">ChexSystems / EWS pull</label>
+              <select id="chexSystems">
+                <option value="">Unknown</option>
+                <option value="none">None</option>
+                <option value="chex_soft">ChexSystems – Soft</option>
+                <option value="chex_hard">ChexSystems – Hard</option>
+                <option value="ews">EWS pull</option>
+                <option value="credit_soft">Credit – Soft</option>
+                <option value="credit_hard">Credit – Hard</option>
+              </select>
+            </div>
+            <div>
+              <label for="pullDate">Pull date</label>
+              <input id="pullDate" type="date">
+            </div>
+
+            <!-- SECTION: Fees -->
+            <div class="field-section-header">Fees</div>
+
+            <div>
+              <label for="monthlyFee">Monthly fee ($)</label>
               <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g., 12">
             </div>
+            <div>
+              <label for="etfAmount">Early termination fee ($)</label>
+              <input id="etfAmount" type="number" step="0.01" min="0" placeholder="e.g., 25">
+            </div>
+            <div>
+              <label for="etfDays">ETF hold period (days)</label>
+              <input id="etfDays" type="number" min="0" step="1" placeholder="e.g., 180">
+              <div class="helper-text">Days after opening before you can close without the fee.</div>
+            </div>
+            <div></div>
+
+            <!-- SECTION: Cooldown & Repeat -->
+            <div class="field-section-header">Cooldown & Repeat</div>
 
             <div>
               <label for="cooldownPreset">Repeat rule preset</label>
@@ -818,9 +640,6 @@
             <div>
               <label for="cooldownMonths">Cooldown to repeat (months)</label>
               <input id="cooldownMonths" type="number" min="0" step="1" placeholder="e.g., 12">
-              <div class="helper-text">
-                Used with anchor date to compute the “Next eligible” date.
-              </div>
             </div>
 
             <div>
@@ -834,10 +653,10 @@
             <div>
               <label for="plannedLifeMonths">Planned account life (months)</label>
               <input id="plannedLifeMonths" type="number" min="0" step="1" placeholder="e.g., 6">
-              <div class="helper-text">
-                Used with open date to estimate when you plan to close.
-              </div>
             </div>
+
+            <!-- SECTION: Reminders -->
+            <div class="field-section-header">Reminders</div>
 
             <div>
               <label for="remindBeforeDeadlineDays">Remind before deadline (days)</label>
@@ -847,36 +666,31 @@
               <label for="remindBeforeRepeatDays">Remind before repeat date (days)</label>
               <input id="remindBeforeRepeatDays" type="number" min="0" step="1" placeholder="e.g., 30">
             </div>
-
             <div>
               <label for="remindBeforeCloseDays">Remind before close date (days)</label>
               <input id="remindBeforeCloseDays" type="number" min="0" step="1" placeholder="e.g., 14">
             </div>
-            <div class="field-full"></div>
+            <div></div>
+
+            <!-- SECTION: Notes -->
+            <div class="field-section-header">Notes & Links</div>
 
             <div class="field-full">
               <label for="requirements">Requirements summary</label>
               <textarea id="requirements" placeholder="e.g., $4,000 DD within 90 days; 10 debit transactions; maintain $1k balance..."></textarea>
             </div>
-
             <div class="field-full">
               <label for="feeWaiver">Fee waiver details</label>
-              <textarea id="feeWaiver" placeholder="e.g., waive with $4k DD or $1,500 min balance or existing mortgage..."></textarea>
+              <textarea id="feeWaiver" placeholder="e.g., waive with $4k DD or $1,500 min balance..."></textarea>
             </div>
-
             <div class="field-full">
               <label for="eligibilityNotes">Eligibility / state notes</label>
               <textarea id="eligibilityNotes" placeholder="e.g., CA only; new customers; no bonus if had account in last 12 months."></textarea>
             </div>
-
             <div class="field-full">
               <label for="sourceUrl">Source URL (Doctor of Credit or bank)</label>
               <input id="sourceUrl" type="text" placeholder="Paste the specific DoC article URL or bank landing page">
-              <div class="helper-text">
-                Keep the original offer link so you can re‑check terms or verify if they change.
-              </div>
             </div>
-
             <div class="field-full">
               <label for="notes">Notes</label>
               <textarea id="notes" placeholder="Tracking notes: which ACH coded as DD, clawback risk, 1099‑INT details, follow‑ups, etc."></textarea>
@@ -900,22 +714,20 @@
     (function() {
       const state = {
         bonuses: [],
-        editingId: null
+        editingId: null,
+        personFilter: 'all'
       };
 
-      const STORAGE_KEY = 'bankBonusData_v1';
+      const STORAGE_KEY = 'bankBonusData_v2';
       const DRIVE_FILE_ID_KEY = 'bankBonusDriveFileId_v1';
+      const DRIVE_FILE_NAME = 'bank-bonus-tracker.json';
 
       let driveFileId = null;
       let isDriveConnected = false;
 
-      const currency = new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 2
-      });
-
+      const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
       const today = new Date();
+      today.setHours(0,0,0,0);
       const currentYear = today.getFullYear();
 
       const el = (id) => document.getElementById(id);
@@ -925,832 +737,618 @@
       const openFormBtn = el('open-form-btn');
       const closeFormBtn = el('close-form-btn');
       const cancelBtn = el('cancel-btn');
-
       const formErrorEl = el('form-error');
       const editingPillEl = el('editing-pill');
       const formTitleEl = el('form-title');
       const saveBtnLabelEl = el('save-btn-label');
 
-      const summaryExpectedEl = el('summary-expected');
-      const summaryReceivedEl = el('summary-received');
-      const summaryTaxYearEl = el('summary-tax-year');
-      const summaryTaxYearLabelEl = el('summary-tax-year-label');
-      const summaryPendingYearEl = el('summary-pending-year');
+      // ── Helpers ──────────────────────────────────────────────────────────────
 
-      const rowsTbodyEl = el('bonus-rows');
-      const emptyStateEl = el('empty-state');
-      const rowCountTagEl = el('row-count-tag');
-
-      const filterStatusEl = el('filter-status');
-      const searchTextEl = el('search-text');
-
-      const cooldownPresetEl = el('cooldownPreset');
-      const cooldownMonthsEl = el('cooldownMonths');
-      const repeatAnchorEl = el('repeatAnchor');
-
-      const driveConnectBtn = el('drive-connect-btn');
-      const driveSaveBtn = el('drive-save-btn');
-      const driveStatusEl = el('drive-status');
-
-      function showModal() {
-        if (formModalEl) formModalEl.style.display = 'flex';
+      function uid() {
+        return Date.now().toString(36) + Math.random().toString(36).slice(2);
       }
 
-      function hideModal() {
-        if (formModalEl) formModalEl.style.display = 'none';
+      function parseDate(str) {
+        if (!str) return null;
+        const d = new Date(str + 'T00:00:00');
+        return isNaN(d) ? null : d;
       }
 
-      function saveToLocalStorage() {
-        try {
-          const json = JSON.stringify(state.bonuses);
-          window.localStorage.setItem(STORAGE_KEY, json);
-        } catch (e) {
-          console.warn('Could not save to localStorage', e);
-        }
+      function daysBetween(a, b) {
+        if (!a || !b) return null;
+        return Math.round((b - a) / 86400000);
       }
 
-      function loadFromLocalStorage() {
-        try {
-          const json = window.localStorage.getItem(STORAGE_KEY);
-          if (!json) return;
-          const parsed = JSON.parse(json);
-          if (!Array.isArray(parsed)) return;
-          state.bonuses = parsed.map((b) => normalizeBonus(b));
-        } catch (e) {
-          console.warn('Could not load from localStorage', e);
-        }
-      }
-
-      function normalizeBonus(b) {
-        return {
-          id: b.id || String(Date.now() + Math.random()),
-          bank: b.bank || '',
-          accountName: b.accountName || '',
-          accountHolder: b.accountHolder || '',
-          loginLabel: b.loginLabel || '',
-          bonusAmount: Number.isFinite(b.bonusAmount)
-            ? b.bonusAmount
-            : parseFloat(b.bonusAmount || '0') || 0,
-          status: b.status || 'planned',
-          dateOpened: b.dateOpened || null,
-          deadline: b.deadline || null,
-          dateRequirementsMet: b.dateRequirementsMet || null,
-          dateBonusPosted: b.dateBonusPosted || null,
-          dateClosed: b.dateClosed || null,
-          monthlyFee:
-            b.monthlyFee != null
-              ? (Number.isFinite(b.monthlyFee)
-                  ? b.monthlyFee
-                  : parseFloat(b.monthlyFee))
-              : null,
-          cooldownPreset: b.cooldownPreset || 'custom',
-          cooldownMonths:
-            b.cooldownMonths != null ? parseInt(b.cooldownMonths, 10) : null,
-          repeatAnchor: b.repeatAnchor || 'auto',
-          plannedLifeMonths:
-            b.plannedLifeMonths != null
-              ? parseInt(b.plannedLifeMonths, 10)
-              : null,
-          remindBeforeDeadlineDays:
-            b.remindBeforeDeadlineDays != null
-              ? parseInt(b.remindBeforeDeadlineDays, 10)
-              : null,
-          remindBeforeRepeatDays:
-            b.remindBeforeRepeatDays != null
-              ? parseInt(b.remindBeforeRepeatDays, 10)
-              : null,
-          remindBeforeCloseDays:
-            b.remindBeforeCloseDays != null
-              ? parseInt(b.remindBeforeCloseDays, 10)
-              : null,
-          requirements: b.requirements || '',
-          feeWaiver: b.feeWaiver || '',
-          eligibilityNotes: b.eligibilityNotes || '',
-          sourceUrl: b.sourceUrl || '',
-          notes: b.notes || ''
-        };
-      }
-
-      async function ensureDriveFileId() {
-        if (driveFileId) return driveFileId;
-
-        const savedId = window.localStorage.getItem(DRIVE_FILE_ID_KEY);
-        if (savedId) {
-          try {
-            const res = await gapi.client.drive.files.get({
-              fileId: savedId,
-              fields: 'id',
-            });
-            if (res.result && res.result.id) {
-              driveFileId = res.result.id;
-              return driveFileId;
-            }
-          } catch (e) {
-            console.warn('Stored Drive file ID invalid, will recreate.', e);
-          }
-        }
-
-        const listRes = await gapi.client.drive.files.list({
-          q:
-            "name = 'bank-bonuses-data.json' and trashed = false and '" +
-            DRIVE_FOLDER_ID +
-            "' in parents",
-          pageSize: 1,
-          fields: 'files(id, name)',
-        });
-        if (listRes.result.files && listRes.result.files.length > 0) {
-          driveFileId = listRes.result.files[0].id;
-          window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-          return driveFileId;
-        }
-
-        const createRes = await gapi.client.drive.files.create({
-          resource: {
-            name: 'bank-bonuses-data.json',
-            mimeType: 'application/json',
-            parents: [DRIVE_FOLDER_ID],
-          },
-          media: {
-            mimeType: 'application/json',
-            body: JSON.stringify([]),
-          },
-          fields: 'id',
-        });
-        driveFileId = createRes.result.id;
-        window.localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-        return driveFileId;
-      }
-
-      // NEW: merge Drive data with existing local data instead of overwriting
-      async function loadFromDriveMerge() {
-        const fileId = await ensureDriveFileId();
-        const res = await gapi.client.drive.files.get({
-          fileId,
-          alt: 'media',
-        });
-        const remoteRaw = Array.isArray(res.result) ? res.result : [];
-        const remote = remoteRaw.map(normalizeBonus);
-
-        const mergedMap = new Map();
-        // start with local
-        for (const b of state.bonuses) mergedMap.set(b.id, b);
-        // remote wins if same id
-        for (const r of remote) mergedMap.set(r.id, r);
-
-        state.bonuses = Array.from(mergedMap.values());
-        saveToLocalStorage();
-        await saveToDrive(); // push merged set back up so both stay in sync
-      }
-
-      async function saveToDrive() {
-        const fileId = await ensureDriveFileId();
-        await gapi.client.request({
-          path: `/upload/drive/v3/files/${fileId}`,
-          method: 'PATCH',
-          params: { uploadType: 'media' },
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state.bonuses),
-        });
-      }
-
-      async function maybeAutoSaveToDrive() {
-        if (!isDriveConnected) return;
-        try {
-          driveStatusEl.textContent = 'Auto-saving to Drive...';
-          await saveToDrive();
-          driveStatusEl.textContent =
-            'Auto-saved to Drive at ' + new Date().toLocaleTimeString();
-        } catch (e) {
-          console.error(e);
-          driveStatusEl.textContent =
-            'Auto-save to Drive failed (local copy is still saved).';
-        }
-      }
-
-      function serializeForm() {
-        return {
-          id: state.editingId || String(Date.now()),
-          bank: el('bank').value.trim(),
-          accountName: el('accountName').value.trim(),
-          accountHolder: el('accountHolder').value.trim(),
-          loginLabel: el('loginLabel').value.trim(),
-          bonusAmount: parseFloat(el('bonusAmount').value || '0'),
-          status: el('status').value,
-          dateOpened: el('dateOpened').value || null,
-          deadline: el('deadline').value || null,
-          dateRequirementsMet: el('dateRequirementsMet').value || null,
-          dateBonusPosted: el('dateBonusPosted').value || null,
-          dateClosed: el('dateClosed').value || null,
-          monthlyFee: el('monthlyFee').value
-            ? parseFloat(el('monthlyFee').value)
-            : null,
-          cooldownPreset: cooldownPresetEl.value,
-          cooldownMonths: cooldownMonthsEl.value
-            ? parseInt(cooldownMonthsEl.value, 10)
-            : null,
-          repeatAnchor: repeatAnchorEl.value,
-          plannedLifeMonths: el('plannedLifeMonths').value
-            ? parseInt(el('plannedLifeMonths').value, 10)
-            : null,
-          remindBeforeDeadlineDays: el('remindBeforeDeadlineDays').value
-            ? parseInt(el('remindBeforeDeadlineDays').value, 10)
-            : null,
-          remindBeforeRepeatDays: el('remindBeforeRepeatDays').value
-            ? parseInt(el('remindBeforeRepeatDays').value, 10)
-            : null,
-          remindBeforeCloseDays: el('remindBeforeCloseDays').value
-            ? parseInt(el('remindBeforeCloseDays').value, 10)
-            : null,
-          requirements: el('requirements').value.trim(),
-          feeWaiver: el('feeWaiver').value.trim(),
-          eligibilityNotes: el('eligibilityNotes').value.trim(),
-          sourceUrl: el('sourceUrl').value.trim(),
-          notes: el('notes').value.trim()
-        };
-      }
-
-      function resetForm() {
-        formEl.reset();
-        el('bonus-id').value = '';
-        state.editingId = null;
-        editingPillEl.style.display = 'none';
-        formTitleEl.textContent = 'Add bank bonus';
-        saveBtnLabelEl.textContent = 'Add bonus';
-        formErrorEl.style.display = 'none';
-        cooldownPresetEl.value = 'custom';
-        cooldownMonthsEl.disabled = false;
-        repeatAnchorEl.value = 'auto';
-      }
-
-      function validateForm(data) {
-        if (!data.bank) return 'Bank is required.';
-        if (!data.accountName) return 'Account name is required.';
-        if (!Number.isFinite(data.bonusAmount) || data.bonusAmount <= 0)
-          return 'Bonus amount must be greater than 0.';
-        return null;
-      }
-
-      function upsertBonus(data) {
-        const idx = state.bonuses.findIndex((b) => b.id === data.id);
-        if (idx === -1) {
-          state.bonuses.push(data);
-        } else {
-          state.bonuses[idx] = data;
-        }
-      }
-
-      function deleteBonus(id) {
-        const idx = state.bonuses.findIndex((b) => b.id === id);
-        if (idx !== -1) {
-          state.bonuses.splice(idx, 1);
-        }
-      }
-
-      function formatDate(iso) {
-        if (!iso) return '';
-        const d = new Date(iso + 'T00:00:00');
-        if (Number.isNaN(d.getTime())) return iso;
-        return d.toLocaleDateString();
-      }
-
-      function getStatusLabel(status) {
-        switch (status) {
-          case 'planned':
-            return 'Planned';
-          case 'in_progress':
-            return 'In progress';
-          case 'requirements_met':
-            return 'Requirements met / waiting for bonus';
-          case 'bonus_posted':
-            return 'Bonus posted';
-          case 'closed':
-            return 'Closed';
-          case 'closed_repeat':
-            return 'Closed / will repeat in future';
-          case 'closing':
-            return 'Account closure process started';
-          case 'cancelled':
-            return 'Cancelled / denied';
-          default:
-            return status;
-        }
-      }
-
-      function isClosedLike(status) {
-        return (
-          status === 'closed' ||
-          status === 'closed_repeat' ||
-          status === 'closing' ||
-          status === 'cancelled'
-        );
-      }
-
-      function addMonths(dateIso, months) {
-        if (!dateIso || !months || months <= 0) return null;
-        const d = new Date(dateIso + 'T00:00:00');
-        if (Number.isNaN(d.getTime())) return null;
-        const result = new Date(d);
-        result.setMonth(result.getMonth() + months);
-        return result;
-      }
-
-      function subtractDays(dateObj, days) {
-        if (!dateObj || !days || days <= 0) return null;
-        const d = new Date(dateObj);
-        d.setDate(d.getDate() - days);
+      function addMonths(date, months) {
+        const d = new Date(date);
+        d.setMonth(d.getMonth() + months);
         return d;
       }
 
-      function computeNextEligibility(b) {
-        if (!b.cooldownMonths || b.cooldownMonths <= 0) return null;
-
-        let baseIso = null;
-        if (b.repeatAnchor === 'bonus') {
-          baseIso = b.dateBonusPosted || null;
-        } else if (b.repeatAnchor === 'closed') {
-          baseIso = b.dateClosed || null;
-        } else {
-          baseIso = b.dateBonusPosted || b.dateClosed || null;
-        }
-        if (!baseIso) return null;
-
-        return addMonths(baseIso, b.cooldownMonths);
+      function fmtDate(d) {
+        if (!d) return '—';
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       }
 
-      function computePlannedCloseDate(b) {
-        if (!b.plannedLifeMonths || b.plannedLifeMonths <= 0 || !b.dateOpened)
-          return null;
-        return addMonths(b.dateOpened, b.plannedLifeMonths);
+      function computeNextEligible(b) {
+        const months = b.cooldownPreset === 'lifetime' ? null : (parseInt(b.cooldownMonths) || null);
+        if (!months) return null;
+        let anchor = null;
+        const anchorPref = b.repeatAnchor || 'auto';
+        if (anchorPref === 'bonus' || (anchorPref === 'auto' && b.dateBonusPosted)) anchor = parseDate(b.dateBonusPosted);
+        else if (anchorPref === 'closed' || (anchorPref === 'auto' && b.dateClosed)) anchor = parseDate(b.dateClosed);
+        if (!anchor) return null;
+        return addMonths(anchor, months);
       }
 
-      function computeSummary() {
-        let expected = 0;
-        let received = 0;
-        let receivedThisYear = 0;
-        let pendingThisYear = 0;
+      function isRepeatReady(b) {
+        const next = computeNextEligible(b);
+        if (!next) return false;
+        return next <= today;
+      }
 
-        for (const b of state.bonuses) {
-          if (b.status !== 'cancelled') {
-            expected += b.bonusAmount || 0;
-          }
-          const bonusYear = b.dateBonusPosted
-            ? new Date(b.dateBonusPosted + 'T00:00:00').getFullYear()
-            : null;
+      function isReadyToClose(b) {
+        if (b.status !== 'bonus_posted') return false;
+        if (!b.dateBonusPosted) return false;
+        const etfDays = parseInt(b.etfDays) || 0;
+        const postedDate = parseDate(b.dateBonusPosted);
+        if (!postedDate) return false;
+        const safeClose = addMonths(postedDate, 0);
+        safeClose.setDate(safeClose.getDate() + etfDays);
+        return today >= safeClose;
+      }
 
-          const isRealized =
-            b.status === 'bonus_posted' ||
-            b.status === 'closed' ||
-            b.status === 'closed_repeat' ||
-            b.status === 'closing';
+      function urgencyClass(b) {
+        if (!b.deadline) return '';
+        const dl = parseDate(b.deadline);
+        if (!dl) return '';
+        const daysLeft = daysBetween(today, dl);
+        if (daysLeft === null) return '';
+        if (daysLeft <= 7 && daysLeft >= 0) return 'urgency-red';
+        if (daysLeft <= 30 && daysLeft >= 0) return 'urgency-yellow';
+        return '';
+      }
 
-          if (isRealized) {
-            received += b.bonusAmount || 0;
-            if (bonusYear === currentYear) {
-              receivedThisYear += b.bonusAmount || 0;
-            }
+      // ── Persistence ──────────────────────────────────────────────────────────
+
+      function saveLocal() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bonuses));
+      }
+
+      function loadLocal() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) state.bonuses = JSON.parse(raw);
+        } catch(e) {}
+      }
+
+      function serializeData() {
+        return JSON.stringify({ version: 2, bonuses: state.bonuses }, null, 2);
+      }
+
+      function deserializeData(raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed; // v1 compat
+        if (parsed && Array.isArray(parsed.bonuses)) return parsed.bonuses;
+        return [];
+      }
+
+      // ── Google Drive ─────────────────────────────────────────────────────────
+
+      async function driveSave() {
+        if (!isDriveConnected) return;
+        const body = serializeData();
+        const blob = new Blob([body], { type: 'application/json' });
+        const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
+
+        try {
+          if (driveFileId) {
+            await gapi.client.request({
+              path: `/upload/drive/v3/files/${driveFileId}`,
+              method: 'PATCH',
+              params: { uploadType: 'multipart' },
+              headers: { 'Content-Type': 'multipart/related; boundary=boundary123' },
+              body: `--boundary123\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--boundary123\r\nContent-Type: application/json\r\n\r\n${body}\r\n--boundary123--`
+            });
           } else {
-            const anchorIso = b.deadline || b.dateBonusPosted || b.dateOpened;
-            if (anchorIso) {
-              const y = new Date(anchorIso + 'T00:00:00').getFullYear();
-              if (y === currentYear) {
-                pendingThisYear += b.bonusAmount || 0;
-              }
-            }
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify({ ...metadata, parents: [DRIVE_FOLDER_ID] })], { type: 'application/json' }));
+            form.append('file', blob);
+            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${gapi.auth.getToken().access_token}` },
+              body: form
+            });
+            const data = await res.json();
+            driveFileId = data.id;
+            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
           }
+          el('drive-status').textContent = '✅ Saved to Drive — ' + new Date().toLocaleTimeString();
+        } catch(err) {
+          el('drive-status').textContent = '⚠️ Drive save failed: ' + (err.message || err);
         }
-
-        summaryExpectedEl.textContent = currency.format(expected || 0);
-        summaryReceivedEl.textContent = currency.format(received || 0);
-        summaryTaxYearEl.textContent = currency.format(receivedThisYear || 0);
-        summaryTaxYearLabelEl.textContent = 'Tax year ' + currentYear;
-        summaryPendingYearEl.textContent = currency.format(pendingThisYear || 0);
       }
 
-      function renderReminders() {
-        const listEl = el('reminders-list');
-        const emptyEl = el('reminders-empty');
-        if (!listEl || !emptyEl) return;
+      async function driveLoad() {
+        // Search for existing file by name in the folder
+        try {
+          const res = await gapi.client.drive.files.list({
+            q: `name='${DRIVE_FILE_NAME}' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
+            fields: 'files(id,name,modifiedTime)',
+            spaces: 'drive'
+          });
+          const files = res.result.files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            driveFileId = file.id;
+            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+            // Fetch content
+            const contentRes = await gapi.client.drive.files.get({
+              fileId: driveFileId,
+              alt: 'media'
+            });
+            const loaded = deserializeData(typeof contentRes.body === 'string' ? contentRes.body : JSON.stringify(contentRes.result));
+            state.bonuses = loaded;
+            saveLocal();
+            renderAll();
+            el('drive-status').textContent = `✅ Loaded from Drive (${files.length} file found, modified ${new Date(file.modifiedTime).toLocaleString()})`;
+          } else {
+            // No existing file — save current data to Drive
+            el('drive-status').textContent = '📁 No existing file found. Will create one on next save.';
+            await driveSave();
+          }
+        } catch(err) {
+          el('drive-status').textContent = '⚠️ Drive load failed: ' + (err.message || err);
+        }
+      }
 
-        const now = new Date();
+      function connectDrive() {
+        tokenClient.callback = async (resp) => {
+          if (resp.error) {
+            el('drive-status').textContent = '⚠️ Auth error: ' + resp.error;
+            return;
+          }
+          isDriveConnected = true;
+          el('drive-connect-btn').textContent = '✅ Drive connected';
+          el('drive-connect-btn').disabled = true;
+          el('drive-save-btn').disabled = false;
+          el('open-form-btn').disabled = false;
+          el('drive-status').textContent = '🔄 Loading data from Drive…';
+          await driveLoad();
+        };
+
+        if (gapi.client.getToken() === null) {
+          tokenClient.requestAccessToken({ prompt: 'consent' });
+        } else {
+          tokenClient.requestAccessToken({ prompt: '' });
+        }
+      }
+
+      // Auto-save to Drive after every mutation
+      function persistAll() {
+        saveLocal();
+        if (isDriveConnected) {
+          // Debounce Drive saves by 1.5s
+          clearTimeout(persistAll._timer);
+          persistAll._timer = setTimeout(driveSave, 1500);
+        }
+      }
+
+      // ── Render ───────────────────────────────────────────────────────────────
+
+      function statusLabel(s) {
+        return {
+          planned: 'Planned',
+          in_progress: 'In progress',
+          requirements_met: 'Req. met',
+          bonus_posted: 'Bonus posted',
+          closed: 'Closed',
+          closed_repeat: 'Closed / repeat',
+          closing: 'Closing',
+          cancelled: 'Cancelled'
+        }[s] || s;
+      }
+
+      function personTag(p) {
+        const labels = { you: 'You', spouse: 'Spouse', joint: 'Joint' };
+        const classes = { you: 'tag-person-you', spouse: 'tag-person-spouse', joint: 'tag-person-joint' };
+        return `<span class="tag ${classes[p] || ''}">${labels[p] || p || '—'}</span>`;
+      }
+
+      function renderSummary() {
+        const nonCancelled = state.bonuses.filter(b => b.status !== 'cancelled');
+        const received = state.bonuses.filter(b => b.dateBonusPosted);
+        const taxYear = state.bonuses.filter(b => {
+          if (!b.dateBonusPosted) return false;
+          return new Date(b.dateBonusPosted).getFullYear() === currentYear;
+        });
+        const pending = state.bonuses.filter(b =>
+          ['planned','in_progress','requirements_met'].includes(b.status)
+        );
+
+        const sum = arr => arr.reduce((a,b) => a + (parseFloat(b.bonusAmount) || 0), 0);
+
+        el('summary-expected').textContent = currency.format(sum(nonCancelled));
+        el('summary-received').textContent = currency.format(sum(received));
+        el('summary-tax-year').textContent = currency.format(sum(taxYear));
+        el('summary-pending-year').textContent = currency.format(sum(pending));
+        el('summary-tax-year-label').textContent = `${currentYear} calendar year`;
+
+        // Per-person
+        ['you','spouse','joint'].forEach(person => {
+          const pb = nonCancelled.filter(b => b.person === person);
+          el(`ps-${person}-expected`).textContent = currency.format(sum(pb));
+          // ROI: avg $/day for open accounts
+          const open = pb.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+          let totalRoi = 0, roiCount = 0;
+          open.forEach(b => {
+            const opened = parseDate(b.dateOpened);
+            const days = daysBetween(opened, today);
+            if (days && days > 0 && b.bonusAmount) {
+              totalRoi += parseFloat(b.bonusAmount) / days;
+              roiCount++;
+            }
+          });
+          el(`ps-${person}-roi`).textContent = roiCount > 0 ? `~${currency.format(totalRoi / roiCount)}/day avg` : '';
+        });
+
+        // Overall avg $/day
+        const openAll = nonCancelled.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+        let totalRoi = 0, roiCount = 0;
+        openAll.forEach(b => {
+          const opened = parseDate(b.dateOpened);
+          const days = daysBetween(opened, today);
+          if (days && days > 0 && b.bonusAmount) {
+            totalRoi += parseFloat(b.bonusAmount) / days;
+            roiCount++;
+          }
+        });
+        el('ps-avg-roi').textContent = roiCount > 0 ? currency.format(totalRoi) + '/day' : '—';
+      }
+
+      function renderPipeline() {
+        const stages = ['planned','in_progress','requirements_met','bonus_posted','closing','closed'];
+        stages.forEach(s => {
+          const countEl = el(`pipe-${s}`);
+          if (countEl) countEl.textContent = state.bonuses.filter(b => b.status === s).length;
+        });
+      }
+
+      function renderWeekWidget() {
+        const weekOut = new Date(today);
+        weekOut.setDate(weekOut.getDate() + 7);
         const items = [];
 
-        for (const b of state.bonuses) {
-          const label = `${b.bank || 'Unknown bank'} – ${b.accountName || ''}`;
-
-          const repeatDate = computeNextEligibility(b);
-          if (repeatDate) {
-            const lead = b.remindBeforeRepeatDays || 30;
-            const reminderDate = subtractDays(repeatDate, lead) || repeatDate;
-            if (reminderDate >= now) {
-              items.push({
-                when: reminderDate,
-                displayDate: repeatDate,
-                type: 'repeat',
-                label,
-                detail: `Repeat bonus window (remind ${lead} days before)`,
-              });
+        state.bonuses.forEach(b => {
+          // Deadline within 7 days
+          if (b.deadline) {
+            const dl = parseDate(b.deadline);
+            if (dl && dl >= today && dl <= weekOut) {
+              const days = daysBetween(today, dl);
+              items.push(`🔴 <strong>${b.bank}</strong> deadline in ${days} day${days===1?'':'s'} (${fmtDate(dl)})`);
             }
           }
-
-          if (b.deadline) {
-            const d = new Date(b.deadline + 'T00:00:00');
-            if (!Number.isNaN(d.getTime())) {
-              const lead = b.remindBeforeDeadlineDays || 7;
-              const reminderDate = subtractDays(d, lead) || d;
-              if (reminderDate >= now) {
-                items.push({
-                  when: reminderDate,
-                  displayDate: d,
-                  type: 'deadline',
-                  label,
-                  detail: `Requirements deadline (remind ${lead} days before)`,
-                });
+          // Ready to close
+          if (isReadyToClose(b)) {
+            items.push(`✅ <strong>${b.bank}</strong> ready to close — bonus posted, ETF period elapsed`);
+          }
+          // Repeat eligible
+          if (isRepeatReady(b) && ['closed','closed_repeat'].includes(b.status)) {
+            items.push(`🔁 <strong>${b.bank}</strong> cooldown elapsed — eligible to repeat`);
+          }
+          // Planned close date within 7 days
+          if (b.dateOpened && b.plannedLifeMonths) {
+            const opened = parseDate(b.dateOpened);
+            if (opened) {
+              const plannedClose = addMonths(opened, parseInt(b.plannedLifeMonths));
+              if (plannedClose >= today && plannedClose <= weekOut) {
+                const days = daysBetween(today, plannedClose);
+                items.push(`📅 <strong>${b.bank}</strong> planned close in ${days} day${days===1?'':'s'} (${fmtDate(plannedClose)})`);
               }
             }
           }
+        });
 
-          const closeDate = computePlannedCloseDate(b);
-          if (closeDate) {
-            const lead = b.remindBeforeCloseDays || 14;
-            const reminderDate = subtractDays(closeDate, lead) || closeDate;
-            if (reminderDate >= now) {
-              items.push({
-                when: reminderDate,
-                displayDate: closeDate,
-                type: 'close',
-                label,
-                detail: `Planned account close date (remind ${lead} days before)`,
-              });
-            }
+        const weekList = el('week-list');
+        if (items.length === 0) {
+          weekList.innerHTML = '<span class="week-empty">Nothing urgent this week. 🎉</span>';
+        } else {
+          weekList.innerHTML = items.map(i => `<div class="week-item">${i}</div>`).join('');
+        }
+      }
+
+      function filteredBonuses() {
+        const statusFilter = el('filter-status').value;
+        const searchText = (el('search-text').value || '').toLowerCase();
+        const personFilter = state.personFilter;
+
+        return state.bonuses.filter(b => {
+          // Person filter
+          if (personFilter !== 'all' && b.person !== personFilter) return false;
+
+          // Status filter
+          if (statusFilter === 'open') {
+            if (['closed','closed_repeat','cancelled'].includes(b.status)) return false;
+          } else if (statusFilter === 'ready_to_close') {
+            if (!isReadyToClose(b)) return false;
+          } else if (statusFilter === 'repeat_ready') {
+            if (!isRepeatReady(b)) return false;
+          } else if (statusFilter !== 'all') {
+            if (b.status !== statusFilter) return false;
           }
-        }
 
-        items.sort((a, b) => a.when - b.when);
+          // Search
+          if (searchText) {
+            const haystack = `${b.bank} ${b.accountName} ${b.accountHolder || ''} ${b.notes || ''}`.toLowerCase();
+            if (!haystack.includes(searchText)) return false;
+          }
 
-        listEl.innerHTML = '';
-        if (!items.length) {
-          emptyEl.style.display = 'block';
-          return;
-        }
-        emptyEl.style.display = 'none';
-
-        for (const item of items.slice(0, 15)) {
-          const li = document.createElement('li');
-          li.style.padding = '0.25rem 0';
-
-          const strong = document.createElement('div');
-          strong.style.fontSize = 'var(--text-sm)';
-          strong.textContent = item.label;
-
-          const meta = document.createElement('div');
-          meta.style.fontSize = 'var(--text-xs)';
-          meta.style.color = 'var(--color-text-muted)';
-          const whenStr = item.when.toLocaleDateString();
-          const eventStr = item.displayDate.toLocaleDateString();
-          meta.textContent = `${item.detail} – event ${eventStr}, reminder ${whenStr}`;
-
-          li.appendChild(strong);
-          li.appendChild(meta);
-          listEl.appendChild(li);
-        }
+          return true;
+        });
       }
 
       function renderTable() {
-        const filter = filterStatusEl.value;
-        const search = searchTextEl.value.trim().toLowerCase();
+        const tbody = el('bonus-rows');
+        const emptyState = el('empty-state');
+        const rowCountTag = el('row-count-tag');
+        const filtered = filteredBonuses();
 
-        const filtered = state.bonuses.filter((b) => {
-          if (filter === 'open' && isClosedLike(b.status)) return false;
-          if (
-            filter === 'in_progress' &&
-            !(b.status === 'in_progress' || b.status === 'requirements_met')
-          )
-            return false;
-          if (filter === 'bonus_posted' && b.status !== 'bonus_posted')
-            return false;
+        rowCountTag.textContent = `${filtered.length} bonus${filtered.length !== 1 ? 'es' : ''}`;
+        tbody.innerHTML = '';
 
-          if (search) {
-            const hay = (b.bank + ' ' + b.accountName).toLowerCase();
-            if (!hay.includes(search)) return false;
-          }
-          return true;
+        if (filtered.length === 0) {
+          emptyState.style.display = '';
+          return;
+        }
+        emptyState.style.display = 'none';
+
+        filtered.forEach(b => {
+          const nextEl = computeNextEligible(b);
+          const repeatReady = isRepeatReady(b);
+          const readyClose = isReadyToClose(b);
+
+          const tr = document.createElement('tr');
+          const urg = urgencyClass(b);
+          if (urg) tr.classList.add(urg);
+
+          // Key dates cell
+          let datesHtml = '';
+          if (b.dateOpened) datesHtml += `<div>Opened: ${fmtDate(parseDate(b.dateOpened))}</div>`;
+          if (b.deadline) datesHtml += `<div>Deadline: ${fmtDate(parseDate(b.deadline))}</div>`;
+          if (b.dateBonusPosted) datesHtml += `<div>Posted: ${fmtDate(parseDate(b.dateBonusPosted))}</div>`;
+          if (b.dateClosed) datesHtml += `<div>Closed: ${fmtDate(parseDate(b.dateClosed))}</div>`;
+          if (nextEl) datesHtml += `<div>Next eligible: ${fmtDate(nextEl)}${repeatReady ? ' <span class="tag tag-repeat-ready">Ready!</span>' : ''}</div>`;
+          if (readyClose) datesHtml += `<div><span class="tag tag-repeat-ready">Ready to close</span></div>`;
+
+          // Requirements cell
+          let reqHtml = '';
+          if (b.minBalance) reqHtml += `<div>Min bal: ${currency.format(b.minBalance)}${b.minBalanceDays ? ` × ${b.minBalanceDays}d` : ''}</div>`;
+          if (b.ddAmount) reqHtml += `<div>DD: ${currency.format(b.ddAmount)}${b.ddCount ? ` × ${b.ddCount}` : ''}</div>`;
+          if (b.etfAmount) reqHtml += `<div>ETF: ${currency.format(b.etfAmount)}${b.etfDays ? ` (hold ${b.etfDays}d)` : ''}</div>`;
+          if (b.chexSystems) reqHtml += `<div>Pull: ${b.chexSystems}</div>`;
+          if (b.requirements) reqHtml += `<div class="cell-notes" title="${b.requirements}">${b.requirements}</div>`;
+
+          tr.innerHTML = `
+            <td data-label="Bank / account">
+              <div class="cell-bank">${b.bank}${b.accountLast4 ? ` ···${b.accountLast4}` : ''}</div>
+              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${b.accountName}</div>
+              ${b.sourceUrl ? `<div><a href="${b.sourceUrl}" target="_blank" rel="noopener" style="font-size:var(--text-xs);">Source ↗</a></div>` : ''}
+            </td>
+            <td data-label="Person">${personTag(b.person)}</td>
+            <td data-label="Status">
+              <span class="pill">${statusLabel(b.status)}</span>
+              ${b.referralBonus ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);">+${currency.format(b.referralBonus)} referral</div>` : ''}
+            </td>
+            <td data-label="Bonus">
+              <strong>${currency.format(b.bonusAmount || 0)}</strong>
+              ${b.monthlyFee ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);">Fee: ${currency.format(b.monthlyFee)}/mo</div>` : ''}
+            </td>
+            <td data-label="Key dates">${datesHtml || '—'}</td>
+            <td data-label="Requirements / notes">${reqHtml || '<span style="color:var(--color-text-muted)">—</span>'}</td>
+            <td data-label="Actions">
+              <button type="button" class="btn-secondary btn-sm" data-edit="${b.id}">Edit</button>
+              <button type="button" class="btn-danger btn-sm" data-delete="${b.id}">Delete</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
         });
 
-        rowCountTagEl.textContent = `${filtered.length} bonus${
-          filtered.length === 1 ? '' : 'es'
-        }`;
+        // Delegate edit/delete
+        tbody.querySelectorAll('[data-edit]').forEach(btn => {
+          btn.addEventListener('click', () => openEdit(btn.dataset.edit));
+        });
+        tbody.querySelectorAll('[data-delete]').forEach(btn => {
+          btn.addEventListener('click', () => deleteBonus(btn.dataset.delete));
+        });
+      }
 
-        rowsTbodyEl.innerHTML = '';
+      function renderReminders() {
+        const remindersList = el('reminders-list');
+        const remindersEmpty = el('reminders-empty');
+        const items = [];
 
-        if (!filtered.length) {
-          emptyStateEl.style.display = 'block';
-          return;
-        } else {
-          emptyStateEl.style.display = 'none';
-        }
-
-        for (const b of filtered) {
-          const tr = document.createElement('tr');
-
-          const tdBank = document.createElement('td');
-          tdBank.className = 'cell-bank';
-          tdBank.setAttribute('data-label', 'Bank / account');
-          if (b.sourceUrl) {
-            const link = document.createElement('a');
-            link.href = b.sourceUrl;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = b.bank;
-            tdBank.appendChild(link);
-          } else {
-            tdBank.textContent = b.bank;
-          }
-          const divAcc = document.createElement('div');
-          divAcc.style.fontSize = 'var(--text-xs)';
-          divAcc.style.color = 'var(--color-text-muted)';
-          divAcc.textContent = b.accountName;
-          tdBank.appendChild(divAcc);
-          tr.appendChild(tdBank);
-
-          const tdStatus = document.createElement('td');
-          tdStatus.setAttribute('data-label', 'Status');
-          const statusPill = document.createElement('span');
-          statusPill.className = 'pill pill-muted';
-          statusPill.textContent = getStatusLabel(b.status);
-          tdStatus.appendChild(statusPill);
-          tr.appendChild(tdStatus);
-
-          const tdBonus = document.createElement('td');
-          tdBonus.setAttribute('data-label', 'Bonus');
-          tdBonus.textContent = currency.format(b.bonusAmount || 0);
-          if (b.monthlyFee && b.monthlyFee > 0) {
-            const feeDiv = document.createElement('div');
-            feeDiv.style.fontSize = 'var(--text-xs)';
-            feeDiv.style.color = 'var(--color-text-muted)';
-            feeDiv.textContent = `Fee: ${currency.format(
-              b.monthlyFee
-            )}/mo`;
-            tdBonus.appendChild(feeDiv);
-          }
-          tr.appendChild(tdBonus);
-
-          const tdDates = document.createElement('td');
-          tdDates.style.fontSize = 'var(--text-xs)';
-          tdDates.setAttribute('data-label', 'Key dates');
-          const parts = [];
-          if (b.dateOpened) parts.push('Opened: ' + formatDate(b.dateOpened));
-          if (b.deadline) parts.push('Deadline: ' + formatDate(b.deadline));
-          if (b.dateBonusPosted) {
-            const year = new Date(
-              b.dateBonusPosted + 'T00:00:00'
-            ).getFullYear();
-            parts.push(
-              'Bonus: ' + formatDate(b.dateBonusPosted) + ` (Y${year})`
-            );
-          }
-          if (b.dateClosed) parts.push('Closed: ' + formatDate(b.dateClosed));
-          const plannedClose = computePlannedCloseDate(b);
-          if (plannedClose)
-            parts.push('Planned close: ' + plannedClose.toLocaleDateString());
-          const next = computeNextEligibility(b);
-          if (next) {
-            parts.push('Next eligible: ' + next.toLocaleDateString());
-          }
-
-          tdDates.textContent = parts.join(' • ');
-          tr.appendChild(tdDates);
-
-          const tdNotes = document.createElement('td');
-          tdNotes.className = 'cell-notes';
-          tdNotes.setAttribute('data-label', 'Requirements / notes');
-          const req = b.requirements || '';
-          const notes = b.notes || '';
-          let text = '';
-          if (req) text += req;
-          if (notes) {
-            if (text) text += ' | ';
-            text += notes;
-          }
-          tdNotes.textContent = text || '—';
-          tr.appendChild(tdNotes);
-
-          const tdActions = document.createElement('td');
-          tdActions.setAttribute('data-label', 'Actions');
-          const editBtn = document.createElement('button');
-          editBtn.type = 'button';
-          editBtn.className = 'btn-secondary btn-sm';
-          editBtn.textContent = 'Edit';
-          editBtn.addEventListener('click', () => loadIntoForm(b.id));
-          tdActions.appendChild(editBtn);
-
-          const delBtn = document.createElement('button');
-          delBtn.type = 'button';
-          delBtn.className = 'btn-danger btn-sm';
-          delBtn.style.marginLeft = '0.35rem';
-          delBtn.textContent = 'Delete';
-          delBtn.addEventListener('click', async () => {
-            if (confirm('Delete this bonus entry?')) {
-              deleteBonus(b.id);
-              saveToLocalStorage();
-              renderAll();
-              await maybeAutoSaveToDrive();
+        state.bonuses.forEach(b => {
+          const deadlineDate = parseDate(b.deadline);
+          const remindDeadline = parseInt(b.remindBeforeDeadlineDays) || 7;
+          if (deadlineDate) {
+            const daysToDeadline = daysBetween(today, deadlineDate);
+            if (daysToDeadline !== null && daysToDeadline >= 0 && daysToDeadline <= remindDeadline) {
+              items.push(`⚠️ <strong>${b.bank} – ${b.accountName}</strong>: requirement deadline in ${daysToDeadline} day${daysToDeadline===1?'':'s'} (${fmtDate(deadlineDate)})`);
             }
-          });
-          tdActions.appendChild(delBtn);
+          }
 
-          tr.appendChild(tdActions);
+          const nextEl = computeNextEligible(b);
+          const remindRepeat = parseInt(b.remindBeforeRepeatDays) || 30;
+          if (nextEl) {
+            const daysToRepeat = daysBetween(today, nextEl);
+            if (daysToRepeat !== null && daysToRepeat >= 0 && daysToRepeat <= remindRepeat) {
+              items.push(`🔁 <strong>${b.bank} – ${b.accountName}</strong>: eligible to repeat in ${daysToRepeat} day${daysToRepeat===1?'':'s'} (${fmtDate(nextEl)})`);
+            }
+          }
 
-          rowsTbodyEl.appendChild(tr);
+          if (b.dateOpened && b.plannedLifeMonths) {
+            const opened = parseDate(b.dateOpened);
+            if (opened) {
+              const plannedClose = addMonths(opened, parseInt(b.plannedLifeMonths));
+              const remindClose = parseInt(b.remindBeforeCloseDays) || 14;
+              const daysToClose = daysBetween(today, plannedClose);
+              if (daysToClose !== null && daysToClose >= 0 && daysToClose <= remindClose) {
+                items.push(`📅 <strong>${b.bank} – ${b.accountName}</strong>: planned close in ${daysToClose} day${daysToClose===1?'':'s'} (${fmtDate(plannedClose)})`);
+              }
+            }
+          }
+        });
+
+        if (items.length === 0) {
+          remindersEmpty.style.display = '';
+          remindersList.innerHTML = '';
+        } else {
+          remindersEmpty.style.display = 'none';
+          remindersList.innerHTML = items.map(i => `<li style="padding:0.35rem 0; border-bottom:1px solid var(--color-border); font-size:var(--text-sm);">${i}</li>`).join('');
         }
       }
 
       function renderAll() {
-        computeSummary();
+        renderSummary();
+        renderPipeline();
+        renderWeekWidget();
         renderTable();
         renderReminders();
       }
 
-      function loadIntoForm(id) {
-        const b = state.bonuses.find((b) => b.id === id);
+      // ── Form ─────────────────────────────────────────────────────────────────
+
+      const formFields = [
+        'person','bank','accountName','accountLast4','accountHolder','loginLabel',
+        'bonusAmount','referralBonus','status','perHousehold',
+        'dateOpened','offerExpiration','deadline','dateRequirementsMet','dateBonusPosted','dateClosed',
+        'minBalance','minBalanceDays','ddAmount','ddCount','ddMethods','chexSystems','pullDate',
+        'monthlyFee','etfAmount','etfDays',
+        'cooldownPreset','cooldownMonths','repeatAnchor','plannedLifeMonths',
+        'remindBeforeDeadlineDays','remindBeforeRepeatDays','remindBeforeCloseDays',
+        'requirements','feeWaiver','eligibilityNotes','sourceUrl','notes'
+      ];
+
+      function openAdd() {
+        state.editingId = null;
+        formTitleEl.textContent = 'Add bank bonus';
+        saveBtnLabelEl.textContent = 'Add bonus';
+        editingPillEl.style.display = 'none';
+        formErrorEl.style.display = 'none';
+        formEl.reset();
+        el('bonus-id').value = '';
+        formModalEl.style.display = 'flex';
+      }
+
+      function openEdit(id) {
+        const b = state.bonuses.find(x => x.id === id);
         if (!b) return;
-        state.editingId = b.id;
+        state.editingId = id;
         formTitleEl.textContent = 'Edit bank bonus';
-        editingPillEl.style.display = 'inline-flex';
         saveBtnLabelEl.textContent = 'Save changes';
-
-        el('bank').value = b.bank || '';
-        el('accountName').value = b.accountName || '';
-        el('accountHolder').value = b.accountHolder || '';
-        el('loginLabel').value = b.loginLabel || '';
-        el('bonusAmount').value =
-          b.bonusAmount != null ? b.bonusAmount : '';
-        el('status').value = b.status || 'planned';
-        el('dateOpened').value = b.dateOpened || '';
-        el('deadline').value = b.deadline || '';
-        el('dateRequirementsMet').value =
-          b.dateRequirementsMet || '';
-        el('dateBonusPosted').value = b.dateBonusPosted || '';
-        el('dateClosed').value = b.dateClosed || '';
-        el('monthlyFee').value =
-          b.monthlyFee != null ? b.monthlyFee : '';
-        cooldownPresetEl.value = b.cooldownPreset || 'custom';
-        cooldownMonthsEl.value =
-          b.cooldownMonths != null ? b.cooldownMonths : '';
-        cooldownMonthsEl.disabled =
-          cooldownPresetEl.value === 'lifetime';
-        repeatAnchorEl.value = b.repeatAnchor || 'auto';
-        el('plannedLifeMonths').value =
-          b.plannedLifeMonths != null ? b.plannedLifeMonths : '';
-        el('remindBeforeDeadlineDays').value =
-          b.remindBeforeDeadlineDays != null
-            ? b.remindBeforeDeadlineDays
-            : '';
-        el('remindBeforeRepeatDays').value =
-          b.remindBeforeRepeatDays != null
-            ? b.remindBeforeRepeatDays
-            : '';
-        el('remindBeforeCloseDays').value =
-          b.remindBeforeCloseDays != null
-            ? b.remindBeforeCloseDays
-            : '';
-        el('requirements').value = b.requirements || '';
-        el('feeWaiver').value = b.feeWaiver || '';
-        el('eligibilityNotes').value = b.eligibilityNotes || '';
-        el('sourceUrl').value = b.sourceUrl || '';
-        el('notes').value = b.notes || '';
-
+        editingPillEl.style.display = '';
         formErrorEl.style.display = 'none';
-        showModal();
+        el('bonus-id').value = id;
+        formFields.forEach(f => {
+          const field = el(f);
+          if (field) field.value = b[f] !== undefined ? b[f] : '';
+        });
+        formModalEl.style.display = 'flex';
       }
 
-      formEl.addEventListener('submit', async (evt) => {
-        evt.preventDefault();
-        const data = serializeForm();
-        const err = validateForm(data);
-        if (err) {
-          formErrorEl.textContent = err;
-          formErrorEl.style.display = 'block';
-          return;
-        }
-        formErrorEl.style.display = 'none';
-        upsertBonus(data);
-        saveToLocalStorage();
-        resetForm();
-        hideModal();
+      function closeModal() {
+        formModalEl.style.display = 'none';
+        state.editingId = null;
+      }
+
+      function deleteBonus(id) {
+        if (!confirm('Delete this bonus entry?')) return;
+        state.bonuses = state.bonuses.filter(b => b.id !== id);
+        persistAll();
         renderAll();
-        await maybeAutoSaveToDrive();
-      });
+      }
 
-      el('reset-btn').addEventListener('click', (e) => {
+      formEl.addEventListener('submit', (e) => {
         e.preventDefault();
-        resetForm();
-      });
+        formErrorEl.style.display = 'none';
 
-      if (cancelBtn) {
-        cancelBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          resetForm();
-          hideModal();
+        const bank = el('bank').value.trim();
+        const accountName = el('accountName').value.trim();
+        const bonusAmount = parseFloat(el('bonusAmount').value);
+
+        if (!bank) { showFormError('Bank is required.'); return; }
+        if (!accountName) { showFormError('Account name is required.'); return; }
+        if (isNaN(bonusAmount) || bonusAmount < 0) { showFormError('Bonus amount must be a valid number.'); return; }
+
+        const entry = { id: state.editingId || uid() };
+        formFields.forEach(f => {
+          const field = el(f);
+          if (field) entry[f] = field.value;
         });
-      }
+        entry.bonusAmount = bonusAmount;
 
-      if (openFormBtn) {
-        openFormBtn.addEventListener('click', () => {
-          if (!isDriveConnected) {
-            alert('Connect Google Drive first so your data can be saved.');
-            if (driveConnectBtn) driveConnectBtn.focus();
-            return;
-          }
-          resetForm();
-          showModal();
-        });
-      }
-
-      if (closeFormBtn) {
-        closeFormBtn.addEventListener('click', (e) => {
-          e.preventDefault();
-          hideModal();
-        });
-      }
-
-      if (formModalEl) {
-        formModalEl.addEventListener('click', (e) => {
-          if (e.target === formModalEl) {
-            hideModal();
-          }
-        });
-      }
-
-      filterStatusEl.addEventListener('change', renderTable);
-      searchTextEl.addEventListener('input', renderTable);
-
-      cooldownPresetEl.addEventListener('change', () => {
-        const val = cooldownPresetEl.value;
-        if (val === '12' || val === '24') {
-          cooldownMonthsEl.disabled = false;
-          cooldownMonthsEl.value = val;
-        } else if (val === 'lifetime') {
-          cooldownMonthsEl.value = '';
-          cooldownMonthsEl.disabled = true;
-        } else {
-          cooldownMonthsEl.disabled = false;
+        // Cooldown preset sync
+        if (entry.cooldownPreset !== 'custom' && entry.cooldownPreset !== 'lifetime') {
+          entry.cooldownMonths = entry.cooldownPreset;
         }
+
+        if (state.editingId) {
+          const idx = state.bonuses.findIndex(b => b.id === state.editingId);
+          if (idx !== -1) state.bonuses[idx] = entry;
+        } else {
+          state.bonuses.push(entry);
+        }
+
+        persistAll();
+        renderAll();
+        closeModal();
       });
 
-      if (driveConnectBtn) {
-        driveConnectBtn.addEventListener('click', () => {
-          if (!gapiInited || !gisInited || !tokenClient) {
-            alert('Google Drive not ready yet. Try again in a moment.');
-            return;
-          }
-          driveStatusEl.textContent = 'Connecting to Google Drive...';
-
-          tokenClient.callback = async (resp) => {
-            if (resp.error !== undefined) {
-              console.error(resp);
-              driveStatusEl.textContent = 'Drive connection failed.';
-              return;
-            }
-            try {
-              await ensureDriveFileId();
-              await loadFromDriveMerge();
-              renderAll();
-              isDriveConnected = true;
-              driveSaveBtn.disabled = false;
-              if (openFormBtn) openFormBtn.disabled = false;
-              driveStatusEl.textContent =
-                'Connected to Drive. Changes will auto‑save.';
-            } catch (e) {
-              console.error(e);
-              driveStatusEl.textContent =
-                'Connected, but could not load/merge Drive file.';
-            }
-          };
-
-          tokenClient.requestAccessToken({ prompt: '' });
-        });
+      function showFormError(msg) {
+        formErrorEl.textContent = msg;
+        formErrorEl.style.display = 'block';
       }
 
-      if (driveSaveBtn) {
-        driveSaveBtn.addEventListener('click', async () => {
-          if (driveSaveBtn.disabled) return;
-          try {
-            driveStatusEl.textContent = 'Saving to Drive...';
-            await saveToDrive();
-            driveStatusEl.textContent =
-              'Saved to Drive at ' + new Date().toLocaleTimeString();
-          } catch (e) {
-            console.error(e);
-            driveStatusEl.textContent = 'Save to Drive failed.';
-          }
-        });
-      }
+      el('reset-btn').addEventListener('click', () => { formEl.reset(); el('bonus-id').value = ''; });
+      openFormBtn.addEventListener('click', openAdd);
+      closeFormBtn.addEventListener('click', closeModal);
+      cancelBtn.addEventListener('click', closeModal);
+      formModalEl.addEventListener('click', (e) => { if (e.target === formModalEl) closeModal(); });
 
-      loadFromLocalStorage();
+      // Person tabs
+      el('person-tabs').querySelectorAll('.person-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          el('person-tabs').querySelectorAll('.person-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          state.personFilter = tab.dataset.person;
+          renderTable();
+        });
+      });
+
+      // Filters
+      el('filter-status').addEventListener('change', renderTable);
+      el('search-text').addEventListener('input', renderTable);
+
+      // Drive buttons
+      el('drive-connect-btn').addEventListener('click', connectDrive);
+      el('drive-save-btn').addEventListener('click', driveSave);
+
+      // ── Boot ─────────────────────────────────────────────────────────────────
+
+      loadLocal();
+      driveFileId = localStorage.getItem(DRIVE_FILE_ID_KEY) || null;
       renderAll();
-      if (typeof maybeEnableDriveButtons === 'function') {
-        maybeEnableDriveButtons();
+
+      // Allow adding if data already exists locally (Drive connect will unlock full edit)
+      if (state.bonuses.length > 0) {
+        openFormBtn.disabled = false;
       }
+
+      // Re-render on Drive connect if already authed
+      window.addEventListener('DOMContentLoaded', () => {
+        maybeEnableDriveButtons();
+      });
+
     })();
   </script>
 </body>

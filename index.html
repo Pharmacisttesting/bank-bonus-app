@@ -154,45 +154,73 @@
     }
 
     // ── Drive helpers ────────────────────────────────────────────────────────
-    // Uses drive.file scope — the app can only see files/folders it creates.
-    // On first connect: searches for the folder by name, creates if missing.
-    // Folder ID is cached in localStorage so subsequent sessions go direct
-    // without needing a search (drive.file can always access by ID).
+    //
+    // SYNC DESIGN:
+    // We use two scopes:
+    //   drive.metadata.readonly — search any user's Drive by name (finds pre-existing
+    //                             folders/files from any device/session)
+    //   drive.file              — read and write files the app touches
+    //
+    // On every device connect:
+    //   1. Search for the folder by name (metadata.readonly finds it regardless of session)
+    //   2. Search for the data file inside it
+    //   3. Load the file — ALWAYS trust Drive as the source of truth
+    //   4. Never create a new folder/file if existing ones are found
+    //
+    // This guarantees website → mobile → website sync works correctly.
 
     async function getOrCreateFolder() {
-      // metadata.readonly scope lets us search any folder by name (finds pre-existing ones)
+      // metadata.readonly scope allows searching across ALL of the user's Drive,
+      // regardless of which device/session created the folder originally.
       const res = await gapi.client.drive.files.list({
         q: "mimeType='application/vnd.google-apps.folder' and name='" + DRIVE_FOLDER_NAME + "' and trashed=false",
-        fields: 'files(id, name)',
+        fields: 'files(id, name, createdTime)',
         spaces: 'drive',
-        pageSize: 10,
+        pageSize: 20,
+        orderBy: 'createdTime',   // oldest first — prefer the original folder
       });
-      const folders = res.result.files;
-      if (folders && folders.length > 0) {
-        console.log('[Drive] Found existing folder:', folders[0].id);
-        return folders[0].id;
+
+      const folders = (res.result.files || []);
+
+      if (folders.length > 0) {
+        // Use the oldest folder — that's the canonical one
+        const folder = folders[0];
+        console.log('[Drive] Found folder "' + DRIVE_FOLDER_NAME + '" id=' + folder.id + ' (' + folders.length + ' found)');
+        if (folders.length > 1) {
+          console.warn('[Drive] Multiple folders found — using oldest:', folder.id);
+        }
+        return folder.id;
       }
-      // Not found — create it (drive.file scope allows this)
-      console.log('[Drive] Creating new folder:', DRIVE_FOLDER_NAME);
+
+      // No folder found at all — create a fresh one
+      console.log('[Drive] Creating folder:', DRIVE_FOLDER_NAME);
       const created = await gapi.client.drive.files.create({
         resource: { name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
         fields: 'id',
       });
+      console.log('[Drive] Created folder:', created.result.id);
       return created.result.id;
     }
 
     async function findFileInFolder(folderId) {
+      // metadata.readonly lets us find the file even if it was created in
+      // a different browser/session. Returns the most recently modified match.
       const res = await gapi.client.drive.files.list({
         q: "name='" + DRIVE_FILE_NAME + "' and '" + folderId + "' in parents and trashed=false",
         fields: 'files(id, name, modifiedTime)',
         spaces: 'drive',
-        pageSize: 5,
+        pageSize: 10,
+        orderBy: 'modifiedTime desc',  // most recent first
       });
-      const files = res.result.files;
-      if (files && files.length > 0) {
-        console.log('[Drive] Found file:', files[0].id, 'modified:', files[0].modifiedTime);
+
+      const files = (res.result.files || []);
+
+      if (files.length > 0) {
+        console.log('[Drive] Found file id=' + files[0].id + ' modified=' + files[0].modifiedTime);
         return { id: files[0].id, modifiedTime: files[0].modifiedTime, exists: true };
       }
+
+      console.log('[Drive] No data file found in folder', folderId);
       return { id: null, modifiedTime: null, exists: false };
     }
 
@@ -1573,6 +1601,14 @@
 
   async function driveSave() {
     if (!isDriveConnected) return;
+
+    // Safety guard: never overwrite Drive with empty data.
+    // If we have 0 bonuses and Drive has a file, something went wrong upstream.
+    if (state.bonuses.length === 0 && driveFileId) {
+      console.warn('[Drive] driveSave skipped — 0 bonuses but driveFileId exists. Refusing to overwrite Drive with empty data.');
+      return;
+    }
+
     const content = serializeData();
     try {
       setDriveStatus('↻ Saving…');
@@ -1593,42 +1629,59 @@
 
   async function driveLoad() {
     try {
-      setDriveStatus('↻ Finding your folder…');
+      // ── Step 1: Find the folder ───────────────────────────────────────────
+      setDriveStatus('↻ Connecting — finding your folder…');
       driveFolderId = await getOrCreateFolder();
       localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
 
-      setDriveStatus('↻ Loading data file…');
+      // ── Step 2: Find the data file ────────────────────────────────────────
+      setDriveStatus('↻ Looking for your data file…');
       const { id, modifiedTime, exists } = await findFileInFolder(driveFolderId);
 
-      if (exists) {
-        driveFileId = id;
-        localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-        const cr  = await gapi.client.drive.files.get({ fileId: driveFileId, alt: 'media' });
-        const raw = typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result);
-        const driveData  = deserializeData(raw);
-        const localCount = state.bonuses.length;
-        const driveCount = driveData.length;
+      if (!exists) {
+        // No file in Drive yet — this is a genuinely fresh setup.
+        // Push whatever is in localStorage up to Drive.
+        setDriveStatus('📁 No data file found — uploading local data…');
+        await driveSave();
+        return;
+      }
 
-        if (localCount > 0 && driveCount > 0 && localCount !== driveCount) {
-          // Smart merge: union by ID — keeps entries from both sides
-          const merged  = [...driveData];
-          const driveIds = new Set(driveData.map(b => b.id));
-          state.bonuses.forEach(b => { if (!driveIds.has(b.id)) merged.push(b); });
-          state.bonuses = merged;
-          setDriveStatus('✓ Merged local + Drive (' + merged.length + ' total) — ' + new Date(modifiedTime).toLocaleString());
-        } else {
-          state.bonuses = driveData;
-          setDriveStatus('✓ Loaded from Drive — ' + new Date(modifiedTime).toLocaleString());
-        }
+      // ── Step 3: Load the Drive file ───────────────────────────────────────
+      driveFileId = id;
+      localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+      setDriveStatus('↻ Loading your data…');
+
+      const cr  = await gapi.client.drive.files.get({ fileId: driveFileId, alt: 'media' });
+      const raw = typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result);
+      const driveData = deserializeData(raw);
+
+      // ── Step 4: Merge strategy ────────────────────────────────────────────
+      // Drive is the source of truth. But if local storage has entries with IDs
+      // that Drive doesn't know about (edits made offline / on another device
+      // before Drive was connected), merge them in.
+      const localBonuses = state.bonuses;
+      const driveIds     = new Set(driveData.map(b => b.id));
+      const localOnly    = localBonuses.filter(b => !driveIds.has(b.id));
+
+      if (localOnly.length > 0) {
+        // Local has new entries Drive hasn't seen yet — merge
+        const merged = [...driveData, ...localOnly];
+        state.bonuses = merged;
+        setDriveStatus('✓ Synced — merged ' + localOnly.length + ' local-only entr' + (localOnly.length === 1 ? 'y' : 'ies') + ' with Drive (' + merged.length + ' total)');
         saveLocal();
         renderAll();
-        await driveSave(); // push merged data back immediately
+        await driveSave();  // write merged result back to Drive
       } else {
-        setDriveStatus('📁 No data file found — saving local data to Drive…');
-        await driveSave();
+        // Drive has everything — just use it
+        state.bonuses = driveData;
+        setDriveStatus('✓ Synced from Drive — ' + driveData.length + ' entr' + (driveData.length === 1 ? 'y' : 'ies') + ' · last saved ' + new Date(modifiedTime).toLocaleTimeString());
+        saveLocal();
+        renderAll();
       }
+
     } catch(err) {
-      setDriveStatus('⚠ Drive error: ' + (err.message || err));
+      console.error('[Drive] driveLoad error:', err);
+      setDriveStatus('⚠ Sync error: ' + (err.message || String(err)));
     }
   }
 

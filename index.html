@@ -9,6 +9,7 @@
   <script>
     const GOOGLE_CLIENT_ID = '35195643841-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
     const GOOGLE_API_KEY   = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
+    const DRIVE_FOLDER_ID  = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
 
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
     const GOOGLE_SCOPES        = 'https://www.googleapis.com/auth/drive.file';
@@ -719,12 +720,9 @@
 
       const STORAGE_KEY = 'bankBonusData_v2';
       const DRIVE_FILE_ID_KEY = 'bankBonusDriveFileId_v1';
-      const DRIVE_FOLDER_ID_KEY = 'bankBonusDriveFolderId_v1';
-      const DRIVE_FOLDER_NAME = 'Bank-Bonus-App-Data';
       const DRIVE_FILE_NAME = 'bank-bonus-tracker.json';
 
       let driveFileId = null;
-      let driveFolderId = null;
       let isDriveConnected = false;
 
       const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
@@ -835,146 +833,36 @@
         return [];
       }
 
-      // ── Google Drive helpers (folder + file) ────────────────────────────────
-
-      async function ensureDriveFolder() {
-        if (driveFolderId) return driveFolderId;
-
-        // Try cached folder id first
-        const cachedFolderId = localStorage.getItem(DRIVE_FOLDER_ID_KEY);
-        if (cachedFolderId) {
-          try {
-            const check = await gapi.client.drive.files.get({
-              fileId: cachedFolderId,
-              fields: 'id,trashed'
-            });
-            if (check && check.result && !check.result.trashed) {
-              driveFolderId = cachedFolderId;
-              return driveFolderId;
-            }
-          } catch(e) {
-            // ignore and fall through to search/create
-          }
-        }
-
-        // Search for folder by name
-        const searchRes = await gapi.client.drive.files.list({
-          q: `mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER_NAME}' and trashed=false`,
-          fields: 'files(id,name)',
-          spaces: 'drive'
-        });
-        const folders = searchRes.result.files || [];
-        if (folders.length > 0) {
-          driveFolderId = folders[0].id;
-          localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
-          return driveFolderId;
-        }
-
-        // Create folder
-        const createRes = await gapi.client.drive.files.create({
-          resource: {
-            name: DRIVE_FOLDER_NAME,
-            mimeType: 'application/vnd.google-apps.folder'
-          },
-          fields: 'id'
-        });
-        driveFolderId = createRes.result.id;
-        localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
-        return driveFolderId;
-      }
-
-      async function ensureDriveFile() {
-        const folderId = await ensureDriveFolder();
-
-        // If we already know file id, check it
-        if (driveFileId) {
-          try {
-            const check = await gapi.client.drive.files.get({
-              fileId: driveFileId,
-              fields: 'id,trashed,parents'
-            });
-            if (check && check.result && !check.result.trashed) {
-              // optionally ensure it's in the right folder, but we just accept it
-              return driveFileId;
-            }
-          } catch(e) {
-            // ignore and fall through
-          }
-        }
-
-        // Search for JSON file by name in that folder
-        const res = await gapi.client.drive.files.list({
-          q: `name='${DRIVE_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
-          fields: 'files(id,name,modifiedTime)',
-          spaces: 'drive'
-        });
-        const files = res.result.files || [];
-        if (files.length > 0) {
-          const file = files[0];
-          driveFileId = file.id;
-          localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-          return driveFileId;
-        }
-
-        // No file yet: create an empty tracker file with current local data
-        const body = serializeData();
-        const blob = new Blob([body], { type: 'application/json' });
-
-        const metadata = {
-          name: DRIVE_FILE_NAME,
-          mimeType: 'application/json',
-          parents: [folderId]
-        };
-
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', blob);
-
-        const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${gapi.auth.getToken().access_token}` },
-          body: form
-        });
-        const data = await uploadRes.json();
-        driveFileId = data.id;
-        localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-        return driveFileId;
-      }
-
-      // ── Google Drive save/load ──────────────────────────────────────────────
+      // ── Google Drive ─────────────────────────────────────────────────────────
 
       async function driveSave() {
         if (!isDriveConnected) return;
+        const body = serializeData();
+        const blob = new Blob([body], { type: 'application/json' });
+        const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
 
         try {
-          const folderId = await ensureDriveFolder();
-          const fileId = await ensureDriveFile();
-          const body = serializeData();
-
-          const metadata = {
-            name: DRIVE_FILE_NAME,
-            mimeType: 'application/json',
-            parents: [folderId]
-          };
-
-          const boundary = 'boundary123';
-          const multipartBody =
-            `--${boundary}\r\n` +
-            'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-            JSON.stringify(metadata) + '\r\n' +
-            `--${boundary}\r\n` +
-            'Content-Type: application/json\r\n\r\n' +
-            body + '\r\n' +
-            `--${boundary}--`;
-
-          await gapi.client.request({
-            path: `/upload/drive/v3/files/${fileId}`,
-            method: 'PATCH',
-            params: { uploadType: 'multipart' },
-            headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-            body: multipartBody
-          });
-
+          if (driveFileId) {
+            await gapi.client.request({
+              path: `/upload/drive/v3/files/${driveFileId}`,
+              method: 'PATCH',
+              params: { uploadType: 'multipart' },
+              headers: { 'Content-Type': 'multipart/related; boundary=boundary123' },
+              body: `--boundary123\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--boundary123\r\nContent-Type: application/json\r\n\r\n${body}\r\n--boundary123--`
+            });
+          } else {
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify({ ...metadata, parents: [DRIVE_FOLDER_ID] })], { type: 'application/json' }));
+            form.append('file', blob);
+            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${gapi.auth.getToken().access_token}` },
+              body: form
+            });
+            const data = await res.json();
+            driveFileId = data.id;
+            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+          }
           el('drive-status').textContent = '✅ Saved to Drive — ' + new Date().toLocaleTimeString();
         } catch(err) {
           el('drive-status').textContent = '⚠️ Drive save failed: ' + (err.message || err);
@@ -982,32 +870,33 @@
       }
 
       async function driveLoad() {
+        // Search for existing file by name in the folder
         try {
-          const fileId = await ensureDriveFile();
-          const fileMeta = await gapi.client.drive.files.get({
-            fileId,
-            fields: 'id,modifiedTime'
+          const res = await gapi.client.drive.files.list({
+            q: `name='${DRIVE_FILE_NAME}' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
+            fields: 'files(id,name,modifiedTime)',
+            spaces: 'drive'
           });
-
-          const contentRes = await gapi.client.drive.files.get({
-            fileId,
-            alt: 'media'
-          });
-
-          const raw = typeof contentRes.body === 'string'
-            ? contentRes.body
-            : JSON.stringify(contentRes.result);
-
-          const loaded = deserializeData(raw);
-          state.bonuses = loaded;
-          saveLocal();
-          renderAll();
-
-          const modified = fileMeta && fileMeta.result && fileMeta.result.modifiedTime
-            ? new Date(fileMeta.result.modifiedTime).toLocaleString()
-            : 'unknown time';
-
-          el('drive-status').textContent = `✅ Loaded from Drive (last modified ${modified})`;
+          const files = res.result.files;
+          if (files && files.length > 0) {
+            const file = files[0];
+            driveFileId = file.id;
+            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+            // Fetch content
+            const contentRes = await gapi.client.drive.files.get({
+              fileId: driveFileId,
+              alt: 'media'
+            });
+            const loaded = deserializeData(typeof contentRes.body === 'string' ? contentRes.body : JSON.stringify(contentRes.result));
+            state.bonuses = loaded;
+            saveLocal();
+            renderAll();
+            el('drive-status').textContent = `✅ Loaded from Drive (${files.length} file found, modified ${new Date(file.modifiedTime).toLocaleString()})`;
+          } else {
+            // No existing file — save current data to Drive
+            el('drive-status').textContent = '📁 No existing file found. Will create one on next save.';
+            await driveSave();
+          }
         } catch(err) {
           el('drive-status').textContent = '⚠️ Drive load failed: ' + (err.message || err);
         }
@@ -1448,7 +1337,6 @@
 
       loadLocal();
       driveFileId = localStorage.getItem(DRIVE_FILE_ID_KEY) || null;
-      driveFolderId = localStorage.getItem(DRIVE_FOLDER_ID_KEY) || null;
       renderAll();
 
       // Allow adding if data already exists locally (Drive connect will unlock full edit)

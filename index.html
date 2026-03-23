@@ -4,31 +4,31 @@
   <meta charset="UTF-8">
   <title>Bank Bonus Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Google Drive config -->
   <script>
     const GOOGLE_CLIENT_ID = '35195643841-b9ubj9hmksgbf57ve00srkktk0dchq1a.apps.googleusercontent.com';
     const GOOGLE_API_KEY   = 'AIzaSyCZ5CM17oZ6qEbykpZcstDy8rjLKKSEdwQ';
-    const DRIVE_FOLDER_ID  = '1iS5MvlzQt5QsUfFMdUvrn-Or-c1QploS';
-
+    // No hardcoded folder ID — we find or create the folder dynamically in each user's Drive
+    const DRIVE_FOLDER_NAME = 'Bank-Bonus-App-Data';
+    const DRIVE_FILE_NAME   = 'bank-bonus-tracker.json';
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    const GOOGLE_SCOPES        = 'https://www.googleapis.com/auth/drive.file';
+    // Using drive scope so the app can find pre-existing folders/files by name.
+    // Tip: for production you can narrow to drive.file if you always start fresh.
+    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive';
 
-    let gapiInited = false;
-    let gisInited  = false;
-    let tokenClient = null;
+    let gapiInited = false, gisInited = false, tokenClient = null;
 
     function gapiLoaded() {
       gapi.load('client', async () => {
-        await gapi.client.init({
-          apiKey: GOOGLE_API_KEY,
-          discoveryDocs: [GOOGLE_DISCOVERY_DOC],
-        });
+        await gapi.client.init({ apiKey: GOOGLE_API_KEY, discoveryDocs: [GOOGLE_DISCOVERY_DOC] });
         gapiInited = true;
         maybeEnableDriveButtons();
       });
     }
-
     function gisLoaded() {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
@@ -38,12 +38,70 @@
       gisInited = true;
       maybeEnableDriveButtons();
     }
-
     function maybeEnableDriveButtons() {
-      const connectBtn = document.getElementById('drive-connect-btn');
-      if (connectBtn && gapiInited && gisInited) {
-        connectBtn.disabled = false;
+      const btn = document.getElementById('drive-connect-btn');
+      if (btn && gapiInited && gisInited) btn.disabled = false;
+    }
+
+    // ── Drive helpers: find-or-create folder & file ──────────────────────────
+
+    // Looks for 'Bank-Bonus-App-Data' folder in the user's My Drive.
+    // If found, returns its ID. If not found, creates it and returns the new ID.
+    // This way your existing folder is never duplicated.
+    async function getOrCreateFolder() {
+      const res = await gapi.client.drive.files.list({
+        // Exact name match, folders only, not trashed, in My Drive
+        q: `mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER_NAME}' and trashed=false`,
+        fields: 'files(id, name)',
+        spaces: 'drive',
+        // pageSize 10 is plenty — we just need the first hit
+        pageSize: 10,
+      });
+
+      const folders = res.result.files;
+
+      if (folders && folders.length > 0) {
+        // ✅ Found existing folder — use it, never create a duplicate
+        console.log(`[Drive] Found existing folder "${DRIVE_FOLDER_NAME}" (id: ${folders[0].id})`);
+        return folders[0].id;
       }
+
+      // 📁 Folder doesn't exist yet — create it in My Drive root
+      console.log(`[Drive] Folder "${DRIVE_FOLDER_NAME}" not found — creating it now`);
+      const created = await gapi.client.drive.files.create({
+        resource: {
+          name: DRIVE_FOLDER_NAME,
+          mimeType: 'application/vnd.google-apps.folder',
+          // No 'parents' = lands in My Drive root, same place as your existing one
+        },
+        fields: 'id',
+      });
+      console.log(`[Drive] Created folder (id: ${created.result.id})`);
+      return created.result.id;
+    }
+
+    // Looks for 'bank-bonus-tracker.json' inside the given folder.
+    // Returns { id, modifiedTime, exists } — never creates the file here.
+    // Caller (driveLoad) decides whether to load existing data or write fresh.
+    async function findFileInFolder(folderId) {
+      const res = await gapi.client.drive.files.list({
+        // Exact name + must be a direct child of this folder + not trashed
+        q: `name='${DRIVE_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
+        fields: 'files(id, name, modifiedTime)',
+        spaces: 'drive',
+        pageSize: 10,
+      });
+
+      const files = res.result.files;
+
+      if (files && files.length > 0) {
+        // ✅ Found existing file — return its id so we load it, not overwrite it
+        console.log(`[Drive] Found existing file "${DRIVE_FILE_NAME}" (id: ${files[0].id}, modified: ${files[0].modifiedTime})`);
+        return { id: files[0].id, modifiedTime: files[0].modifiedTime, exists: true };
+      }
+
+      console.log(`[Drive] File "${DRIVE_FILE_NAME}" not found in folder ${folderId}`);
+      return { id: null, modifiedTime: null, exists: false };
     }
   </script>
   <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
@@ -51,1305 +109,1547 @@
 
   <style>
     :root {
-      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
-      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
-      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
-      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
-      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
-
-      --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
-      --space-4: 1rem; --space-6: 1.5rem; --space-8: 2rem; --space-12: 3rem;
-
-      --color-bg: #f7f6f2;
-      --color-surface: #fbfbf9;
-      --color-surface-alt: #f3f0ec;
-      --color-border: #d4d1ca;
-      --color-text: #28251d;
-      --color-text-muted: #7a7974;
-      --color-primary: #01696f;
-      --color-primary-soft: #cedcd8;
-      --color-error: #a12c7b;
-      --color-warn: #b45309;
-      --color-warn-soft: #fef3c7;
-      --color-danger-soft: #fee2e2;
-
-      --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-      --content-max: 1200px;
-      --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --color-bg: #171614; --color-surface: #201f1d;
-        --color-surface-alt: #262523; --color-border: #393836;
-        --color-text: #cdccca; --color-text-muted: #797876;
-        --color-primary: #4f98a3; --color-primary-soft: #313b3b;
-        --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
-        --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
-        --color-warn-soft: #3b2a00; --color-danger-soft: #3b0a0a;
-      }
+      --bg: #0a0c0b;
+      --surface: #111410;
+      --surface-2: #161a15;
+      --surface-3: #1c201b;
+      --border: #262b24;
+      --border-bright: #2e3429;
+      --text: #d4dbd0;
+      --text-muted: #5c6659;
+      --text-dim: #3a4038;
+      --accent: #3ddc84;
+      --accent-dim: #1a3a25;
+      --accent-glow: rgba(61,220,132,0.12);
+      --accent-soft: rgba(61,220,132,0.07);
+      --red: #ff5e5e;
+      --red-dim: #3b1414;
+      --amber: #f5a623;
+      --amber-dim: #352410;
+      --blue: #5ba3e8;
+      --blue-dim: #132438;
+      --pink: #e06db5;
+      --font-body: 'Sora', system-ui, sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+      --r-sm: 4px; --r-md: 8px; --r-lg: 12px;
+      --transition: 150ms cubic-bezier(0.16,1,0.3,1);
+      --glow: 0 0 20px rgba(61,220,132,0.08), 0 1px 3px rgba(0,0,0,0.4);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { text-size-adjust: none; scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; }
+
     body {
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 40% at 50% -10%, rgba(61,220,132,0.04) 0%, transparent 60%);
       min-height: 100vh;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: var(--text-base); line-height: 1.6; color: var(--color-text);
-      background: radial-gradient(circle at top, #ffffff 0, var(--color-bg) 45%, var(--color-bg) 100%);
-      padding: var(--space-6) var(--space-4);
-      display: flex; justify-content: center;
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      padding: 24px 16px 48px;
+      display: flex;
+      justify-content: center;
     }
 
-    .app-shell {
-      width: 100%; max-width: var(--content-max);
-      background: var(--color-surface);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-md);
-      border: 1px solid var(--color-border);
-      padding: var(--space-6);
+    .shell {
+      width: 100%;
+      max-width: 1280px;
+    }
+
+    /* ─── Header ─────────────────────────────────────────────── */
+    .site-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-brand {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .brand-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .brand-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: #e8ede4;
+      line-height: 1.1;
+    }
+
+    .brand-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .brand-sub a { color: var(--accent); text-decoration: none; }
+    .brand-sub a:hover { text-decoration: underline; }
+
+    .header-tips {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 12px 16px;
+      max-width: 340px;
+    }
+
+    .header-tips h3 {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .header-tips p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ─── Summary Cards ─────────────────────────────────────── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 900px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .summary-grid { grid-template-columns: 1fr; } }
+
+    .summary-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .summary-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.3;
+    }
+
+    .summary-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .summary-value {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .summary-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* ─── Pipeline ────────────────────────────────────────────── */
+    .pipeline {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      margin-bottom: 16px;
+    }
+
+    .pipeline::-webkit-scrollbar { height: 3px; }
+    .pipeline::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 2px; }
+    .pipeline::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+    .pipe-stage {
+      flex: 1;
+      min-width: 90px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 10px 12px;
+      text-align: center;
+    }
+
+    .pipe-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .pipe-count {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* ─── This Week Widget ───────────────────────────────────── */
+    .week-widget {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+
+    .week-widget-head {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .week-item {
+      font-size: 12px;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .week-item:last-child { border-bottom: none; }
+    .week-empty { font-size: 12px; color: var(--text-muted); }
+
+    /* ─── Person Tabs ─────────────────────────────────────────── */
+    .person-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .person-tab {
+      padding: 5px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      transition: all var(--transition);
+    }
+
+    .person-tab:hover { border-color: var(--border-bright); color: var(--text); }
+    .person-tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+    /* ─── Panel ───────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    /* ─── Table ───────────────────────────────────────────────── */
+    .table-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .toolbar-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .table-wrapper {
+      max-height: 600px;
+      overflow: auto;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+    }
+
+    .table-wrapper::-webkit-scrollbar { width: 4px; height: 4px; }
+    .table-wrapper::-webkit-scrollbar-track { background: var(--surface); }
+    .table-wrapper::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+    thead {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--surface-3);
+    }
+
+    th {
+      padding: 9px 12px;
+      text-align: left;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    tbody tr {
+      transition: background var(--transition);
+    }
+
+    tbody tr:hover { background: var(--accent-soft); }
+
+    tbody tr.urgency-red { background: var(--red-dim) !important; }
+    tbody tr.urgency-red:hover { background: rgba(59,20,20,0.9) !important; }
+    tbody tr.urgency-yellow { background: var(--amber-dim) !important; }
+    tbody tr.urgency-yellow:hover { background: rgba(53,36,16,0.9) !important; }
+
+    .cell-bank {
+      font-weight: 600;
+      font-size: 13px;
+      color: #e8ede4;
+    }
+
+    .cell-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .cell-link { font-size: 10px; color: var(--accent); text-decoration: none; }
+    .cell-link:hover { text-decoration: underline; }
+
+    .cell-notes {
+      max-width: 200px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── Status / Tags ───────────────────────────────────────── */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    .pill-default { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+    .pill-green   { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(61,220,132,0.2); }
+    .pill-amber   { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,166,35,0.2); }
+    .pill-blue    { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(91,163,232,0.2); }
+    .pill-red     { background: var(--red-dim); color: var(--red); border: 1px solid rgba(255,94,94,0.2); }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+
+    .tag-person-you     { background: rgba(91,163,232,0.12); color: var(--blue); border-color: rgba(91,163,232,0.2); }
+    .tag-person-spouse  { background: rgba(224,109,181,0.12); color: var(--pink); border-color: rgba(224,109,181,0.2); }
+    .tag-person-joint   { background: var(--accent-dim); color: var(--accent); border-color: rgba(61,220,132,0.2); }
+    .tag-repeat-ready   { background: var(--accent-dim); color: var(--accent); border-color: rgba(61,220,132,0.2); }
+    .tag-count          { background: var(--surface-3); color: var(--text-muted); border-color: var(--border); }
+
+    /* ─── Buttons ─────────────────────────────────────────────── */
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      background: none;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0c0b;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #52e896;
+      box-shadow: 0 0 16px rgba(61,220,132,0.25);
+    }
+
+    .btn-secondary {
+      border-color: var(--border-bright);
+      background: var(--surface-3);
+      color: var(--text-muted);
+    }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+
+    .btn-ghost { color: var(--text-muted); }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+
+    .btn-danger { border-color: rgba(255,94,94,0.3); color: var(--red); background: var(--red-dim); }
+    .btn-danger:hover:not(:disabled) { background: rgba(255,94,94,0.15); }
+
+    .btn-sm { padding: 4px 10px; font-size: 11px; border-radius: 4px; }
+
+    /* ─── Inputs ──────────────────────────────────────────────── */
+    input[type="text"], input[type="number"], input[type="date"], select, textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 13px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+
+    input::placeholder, textarea::placeholder { color: var(--text-dim); }
+    textarea { min-height: 80px; resize: vertical; }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    select { cursor: pointer; }
+
+    option { background: var(--surface-2); }
+
+    label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px 16px;
+    }
+
+    @media (max-width: 560px) { .field-grid { grid-template-columns: 1fr; } }
+
+    .field-full { grid-column: 1 / -1; }
+
+    .field-section-header {
+      grid-column: 1 / -1;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      padding-top: 12px;
+      padding-bottom: 4px;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+    }
+
+    .helper-text {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    .error-text { color: var(--red); font-size: 11px; margin-top: 6px; }
+
+    .actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    /* ─── Modal ───────────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 16px;
+    }
+
+    .modal-dialog {
+      width: 100%;
+      max-width: 760px;
+      max-height: 92vh;
+      overflow-y: auto;
+      background: var(--surface-2);
+      border: 1px solid var(--border-bright);
+      border-radius: var(--r-lg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(61,220,132,0.06);
+    }
+
+    .modal-dialog::-webkit-scrollbar { width: 4px; }
+    .modal-dialog::-webkit-scrollbar-track { background: var(--surface-2); }
+    .modal-dialog::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--surface-2);
+      z-index: 1;
+    }
+
+    .modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e8ede4;
+    }
+
+    .modal-body { padding: 20px; }
+
+    /* ─── Small select ────────────────────────────────────────── */
+    .small-select {
+      width: auto;
+      min-width: 160px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+
+    .small-input {
+      width: 180px;
+      font-size: 12px;
+    }
+
+    /* ─── Reminders ────────────────────────────────────────────── */
+    #reminders-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    #reminders-list li:last-child { border-bottom: none; }
+
+    /* ─── Drive section ─────────────────────────────────────────── */
+    .drive-section {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .drive-status {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* ─── Separator line ─────────────────────────────────────── */
+    .section-sep {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0;
+    }
+
+    /* ─── Mobile responsive table ────────────────────────────── */
+    @media (max-width: 680px) {
+      .table-wrapper { max-height: none; overflow-x: visible; border: none; background: transparent; }
+      table { border-collapse: separate; border-spacing: 0 6px; }
+      thead { display: none; }
+      tbody tr {
+        display: block;
+        background: var(--surface-2);
+        border-radius: var(--r-md);
+        padding: 12px;
+        border: 1px solid var(--border);
+      }
+      tbody tr.urgency-red { background: var(--red-dim) !important; }
+      tbody tr.urgency-yellow { background: var(--amber-dim) !important; }
+      tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 4px 0;
+        border-bottom: none;
+      }
+      tbody td::before {
+        content: attr(data-label);
+        font-family: var(--font-mono);
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-right: 8px;
+        white-space: nowrap;
+      }
+      .cell-notes { max-width: none; white-space: normal; }
+      td[data-label="Actions"] { justify-content: flex-end; margin-top: 8px; }
     }
 
     @media (max-width: 768px) {
-      body { padding: var(--space-4); }
-      .app-shell { padding: var(--space-4); border-radius: var(--radius-md); }
+      body { padding: 12px 12px 32px; }
+      .brand-title { font-size: 20px; }
     }
 
-    h1, h2, h3 { line-height: 1.2; }
-    h1 { font-size: var(--text-xl); margin-bottom: var(--space-2); }
-    h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
-    h3 { font-size: var(--text-base); margin-bottom: var(--space-1); }
-    p { margin-bottom: var(--space-2); color: var(--color-text-muted); }
-    a { color: var(--color-primary); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .header {
-      display: flex; flex-wrap: wrap; align-items: flex-start;
-      justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-6);
-    }
-    .header-main { max-width: 32rem; }
-
-    .badge {
-      display: inline-flex; align-items: center; gap: 0.35rem;
-      padding: 0.1rem 0.6rem; border-radius: 999px;
-      background: var(--color-primary-soft); color: var(--color-primary);
-      font-size: var(--text-xs); text-transform: uppercase;
-      letter-spacing: 0.06em; font-weight: 600; margin-bottom: var(--space-2);
+    /* ─── Animations ─────────────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: var(--space-4); margin-bottom: var(--space-4);
-    }
-    @media (max-width: 1024px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 520px) { .summary-grid { grid-template-columns: 1fr; } }
-
-    .summary-card {
-      background: var(--color-surface-alt); border-radius: var(--radius-md);
-      padding: var(--space-4); box-shadow: var(--shadow-sm);
-      border: 1px solid var(--color-border);
-    }
-    .summary-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 0.35rem; }
-    .summary-value { font-size: var(--text-lg); font-weight: 600; }
-    .summary-sub { font-size: var(--text-xs); color: var(--color-text-muted); }
-
-    /* Person tabs */
-    .person-tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); flex-wrap: wrap; }
-    .person-tab {
-      padding: 0.3rem 1rem; border-radius: 999px; border: 1px solid var(--color-border);
-      background: var(--color-surface); cursor: pointer; font-size: var(--text-sm);
-      transition: all var(--transition);
-    }
-    .person-tab.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-
-    /* Pipeline / Kanban */
-    .pipeline {
-      display: flex; gap: var(--space-2); overflow-x: auto;
-      padding-bottom: var(--space-2); margin-bottom: var(--space-4);
-    }
-    .pipeline-stage {
-      flex: 0 0 auto; min-width: 110px; background: var(--color-surface-alt);
-      border-radius: var(--radius-md); border: 1px solid var(--color-border);
-      padding: var(--space-3); text-align: center;
-    }
-    .pipeline-stage-label { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 0.25rem; }
-    .pipeline-stage-count { font-size: var(--text-lg); font-weight: 700; color: var(--color-primary); }
-
-    /* This week widget */
-    .week-widget {
-      background: var(--color-surface-alt); border: 1px solid var(--color-border);
-      border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-4);
-    }
-    .week-widget h3 { color: var(--color-primary); margin-bottom: var(--space-2); }
-    .week-item { font-size: var(--text-sm); padding: 0.2rem 0; border-bottom: 1px solid var(--color-border); }
-    .week-item:last-child { border-bottom: none; }
-    .week-empty { font-size: var(--text-sm); color: var(--color-text-muted); }
-
-    .panel {
-      background: var(--color-surface-alt); border-radius: var(--radius-md);
-      padding: var(--space-4); border: 1px solid var(--color-border);
-    }
-    .panel + .panel { margin-top: var(--space-4); }
-    .panel-header {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: var(--space-2); margin-bottom: var(--space-2);
-    }
-    .panel-header h2, .panel-header h3 { margin-bottom: 0; }
-
-    .field-grid {
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-3) var(--space-4);
-    }
-    @media (max-width: 640px) { .field-grid { grid-template-columns: 1fr; } }
-
-    label { display: block; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 0.25rem; }
-
-    input[type="text"], input[type="number"], input[type="date"], select, textarea {
-      width: 100%; padding: 0.45rem 0.6rem; font-size: var(--text-sm);
-      border-radius: var(--radius-sm); border: 1px solid var(--color-border);
-      background: var(--color-surface); color: var(--color-text);
-      outline: none; transition: border-color var(--transition), box-shadow var(--transition);
-    }
-    input::placeholder, textarea::placeholder { color: var(--color-text-muted); opacity: 0.8; }
-    textarea { min-height: 5.5rem; resize: vertical; }
-    input:focus, select:focus, textarea:focus {
-      border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary-soft);
-    }
-    .field-full { grid-column: 1 / -1; }
-    .field-section-header {
-      grid-column: 1 / -1; font-size: var(--text-xs); text-transform: uppercase;
-      letter-spacing: 0.08em; color: var(--color-primary); font-weight: 700;
-      padding-top: var(--space-3); border-top: 1px solid var(--color-border); margin-top: var(--space-2);
+    .summary-card, .pipe-stage, .week-widget, .panel {
+      animation: fadeIn 0.3s ease both;
     }
 
-    .actions-row { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-4); }
+    .summary-card:nth-child(1) { animation-delay: 0.04s; }
+    .summary-card:nth-child(2) { animation-delay: 0.08s; }
+    .summary-card:nth-child(3) { animation-delay: 0.12s; }
+    .summary-card:nth-child(4) { animation-delay: 0.16s; }
 
-    button {
-      border-radius: 999px; border: 1px solid transparent; padding: 0.4rem 0.9rem;
-      font-size: var(--text-sm); display: inline-flex; align-items: center; gap: 0.35rem;
-      cursor: pointer; background: none; color: inherit;
-      transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+    /* ─── Dot indicator ─────────────────────────────────────────── */
+    .live-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
     }
-    button:disabled { opacity: 0.5; cursor: default; }
 
-    .btn-primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
-    .btn-primary:hover:not(:disabled) { background: #0c4e54; border-color: #0c4e54; transform: translateY(-1px); box-shadow: var(--shadow-md); }
-    .btn-secondary { border-color: var(--color-border); background: var(--color-surface); }
-    .btn-secondary:hover:not(:disabled) { background: var(--color-surface-alt); }
-    .btn-danger { border-color: var(--color-error); color: var(--color-error); background: var(--color-surface); }
-    .btn-danger:hover:not(:disabled) { background: rgba(161,44,123,0.08); }
-    .btn-sm { padding: 0.25rem 0.6rem; font-size: var(--text-xs); }
-
-    .pill { display: inline-flex; align-items: center; justify-content: center; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: var(--text-xs); background: var(--color-primary-soft); color: var(--color-primary); white-space: nowrap; }
-    .pill-muted { background: #00000010; color: var(--color-text-muted); }
-
-    .table-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
-    .table-toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-    .small-select { padding-inline: 0.6rem 1.8rem; font-size: var(--text-xs); }
-
-    .table-wrapper { max-height: 640px; overflow: auto; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); }
-    table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-    thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface-alt); }
-    th, td { padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
-    th { text-align: left; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); background: var(--color-surface-alt); }
-    tbody tr:hover { background: rgba(1,105,111,0.06); }
-
-    /* Urgency row colors */
-    tbody tr.urgency-red { background: var(--color-danger-soft) !important; }
-    tbody tr.urgency-yellow { background: var(--color-warn-soft) !important; }
-    tbody tr.urgency-red:hover { background: #fecaca !important; }
-    tbody tr.urgency-yellow:hover { background: #fde68a40 !important; }
-
-    .cell-bank { font-weight: 600; }
-    .cell-notes { max-width: 18rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; color: var(--color-text-muted); }
-
-    .empty-state { padding: var(--space-4); text-align: center; color: var(--color-text-muted); font-size: var(--text-sm); }
-
-    .tag { display: inline-flex; align-items: center; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: var(--text-xs); border: 1px solid rgba(0,0,0,0.06); background: rgba(0,0,0,0.02); color: var(--color-text-muted); white-space: nowrap; }
-    .tag-person-you { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-    .tag-person-spouse { background: #fce7f3; color: #9d174d; border-color: #fbcfe8; }
-    .tag-person-joint { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
-    .tag-repeat-ready { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
-
-    .error-text { color: var(--color-error); font-size: var(--text-xs); margin-top: 0.25rem; }
-    .helper-text { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 0.1rem; }
-    .inline-input { max-width: 180px; }
-
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 50; }
-    .modal-dialog { max-width: 780px; width: 100%; max-height: 92vh; overflow: auto; }
-    @media (max-width: 768px) { .modal-dialog { max-width: 100%; margin: 0 var(--space-2); } }
-
-    @media (max-width: 720px) {
-      .table-wrapper { max-height: none; overflow-x: visible; border: none; background: transparent; }
-      table { border-collapse: separate; border-spacing: 0 0.75rem; }
-      thead { display: none; }
-      tbody tr { display: block; background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: var(--space-3); border: 1px solid var(--color-border); }
-      tbody td { display: flex; justify-content: space-between; align-items: flex-start; padding: 0.25rem 0; border-bottom: none; }
-      tbody td::before { content: attr(data-label); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-right: var(--space-2); white-space: nowrap; }
-      .cell-notes { max-width: none; white-space: normal; }
-      td[data-label="Actions"] { justify-content: flex-end; margin-top: var(--space-2); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
     }
   </style>
 </head>
 <body>
-  <div class="app-shell" id="app">
-    <header class="header">
-      <div class="header-main">
-        <div class="badge">Bank bonus churning</div>
-        <h1>Bank Bonus Tracker</h1>
-        <p>
-          Track every checking and savings bonus: requirements, deadlines, fees, payout dates, and when
-          you can repeat. Pair with
-          <a href="https://www.doctorofcredit.com/best-bank-account-bonuses/" target="_blank" rel="noopener noreferrer">Doctor of Credit</a> to find new offers.
-        </p>
-      </div>
-      <div>
-        <h3>Workflow tips</h3>
-        <p>1) Connect Google Drive, 2) add offers with terms, 3) meet requirements, 4) update bonus / close dates, 5) use cooldown + reminders to know when to close and when you can repeat.</p>
-      </div>
-    </header>
+<div class="shell">
 
-    <!-- Summary cards -->
-    <section class="summary-grid" id="summary">
-      <div class="summary-card">
-        <div class="summary-label">Expected bonuses</div>
-        <div class="summary-value" id="summary-expected">$0</div>
-        <div class="summary-sub">Sum of all non‑cancelled bonuses</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Received bonuses</div>
-        <div class="summary-value" id="summary-received">$0</div>
-        <div class="summary-sub">All time, based on bonus posted dates</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Received this tax year</div>
-        <div class="summary-value" id="summary-tax-year">$0</div>
-        <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Pending this tax year</div>
-        <div class="summary-value" id="summary-pending-year">$0</div>
-        <div class="summary-sub">Planned / in progress / waiting</div>
-      </div>
-    </section>
-
-    <!-- Per-person breakdown -->
-    <section class="summary-grid" id="person-summary" style="margin-top:0; margin-bottom:var(--space-4);">
-      <div class="summary-card">
-        <div class="summary-label">You — Expected</div>
-        <div class="summary-value" id="ps-you-expected">$0</div>
-        <div class="summary-sub" id="ps-you-roi"></div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Spouse — Expected</div>
-        <div class="summary-value" id="ps-spouse-expected">$0</div>
-        <div class="summary-sub" id="ps-spouse-roi"></div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Joint — Expected</div>
-        <div class="summary-value" id="ps-joint-expected">$0</div>
-        <div class="summary-sub" id="ps-joint-roi"></div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Avg $/day (open accounts)</div>
-        <div class="summary-value" id="ps-avg-roi">—</div>
-        <div class="summary-sub">Bonus ÷ days open</div>
-      </div>
-    </section>
-
-    <!-- Pipeline Kanban -->
-    <div class="pipeline" id="pipeline-bar">
-      <div class="pipeline-stage"><div class="pipeline-stage-label">Planned</div><div class="pipeline-stage-count" id="pipe-planned">0</div></div>
-      <div class="pipeline-stage"><div class="pipeline-stage-label">In Progress</div><div class="pipeline-stage-count" id="pipe-in_progress">0</div></div>
-      <div class="pipeline-stage"><div class="pipeline-stage-label">Req Met</div><div class="pipeline-stage-count" id="pipe-requirements_met">0</div></div>
-      <div class="pipeline-stage"><div class="pipeline-stage-label">Posted</div><div class="pipeline-stage-count" id="pipe-bonus_posted">0</div></div>
-      <div class="pipeline-stage"><div class="pipeline-stage-label">Closing</div><div class="pipeline-stage-count" id="pipe-closing">0</div></div>
-      <div class="pipeline-stage"><div class="pipeline-stage-label">Closed</div><div class="pipeline-stage-count" id="pipe-closed">0</div></div>
-    </div>
-
-    <!-- This Week Widget -->
-    <div class="week-widget" id="week-widget">
-      <h3>📅 This Week's Actions</h3>
-      <div id="week-list"><span class="week-empty">Nothing urgent this week.</span></div>
-    </div>
-
-    <!-- Person filter tabs -->
-    <div class="person-tabs" id="person-tabs">
-      <button class="person-tab active" data-person="all">All</button>
-      <button class="person-tab" data-person="you">You</button>
-      <button class="person-tab" data-person="spouse">Spouse</button>
-      <button class="person-tab" data-person="joint">Joint</button>
-    </div>
-
-    <!-- Main table panel -->
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Active & completed bonuses</h2>
-        <div class="table-toolbar-group">
-          <button type="button" class="btn-primary" id="open-form-btn" disabled>Add / edit bonus</button>
-        </div>
-      </div>
-      <div class="table-toolbar">
-        <div class="table-toolbar-group">
-          <span class="tag" id="row-count-tag">0 bonuses</span>
-        </div>
-        <div class="table-toolbar-group">
-          <select id="filter-status" class="small-select">
-            <option value="all">All statuses</option>
-            <option value="open">Only open (not closed/cancelled)</option>
-            <option value="in_progress">In progress / requirements</option>
-            <option value="bonus_posted">Bonus posted</option>
-            <option value="ready_to_close">Ready to close</option>
-            <option value="repeat_ready">Repeat eligible</option>
-          </select>
-          <input type="text" id="search-text" class="inline-input" placeholder="Search bank or account">
-        </div>
-      </div>
-      <div class="table-wrapper" id="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Bank / account</th>
-              <th>Person</th>
-              <th>Status</th>
-              <th>Bonus</th>
-              <th>Key dates</th>
-              <th>Requirements / notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="bonus-rows"></tbody>
-        </table>
-        <div class="empty-state" id="empty-state">No bonuses yet. Connect Drive, then add your first offer.</div>
-      </div>
-    </section>
-
-    <!-- Reminders -->
-    <section class="panel" id="reminders-panel">
-      <div class="panel-header"><h3>Upcoming repeats & deadlines</h3></div>
-      <p class="helper-text" id="reminders-empty">No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.</p>
-      <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
-    </section>
-
-    <!-- Backup / Drive -->
-    <section class="panel">
-      <div class="panel-header"><h3>Backup & Google Drive</h3></div>
-      <p class="helper-text">
-        Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync there too.
-        On connect, existing Drive data will be loaded automatically.
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-brand">
+      <div class="brand-eyebrow">&#9670; bank bonus churning</div>
+      <h1 class="brand-title">Bonus Tracker</h1>
+      <p class="brand-sub">
+        Track requirements, deadlines &amp; payouts. Pair with
+        <a href="https://www.doctorofcredit.com/best-bank-account-bonuses/" target="_blank" rel="noopener">Doctor of Credit</a>.
       </p>
-      <div class="actions-row" style="justify-content:flex-start;">
-        <button type="button" class="btn-secondary" id="drive-connect-btn" disabled>Connect Drive</button>
-        <button type="button" class="btn-secondary" id="drive-save-btn" disabled>Save to Drive</button>
-      </div>
-      <span class="helper-text" id="drive-status" style="margin-top:0.5rem; display:block;">Not connected to Drive.</span>
-    </section>
-  </div>
+    </div>
+    <div class="header-tips">
+      <h3>Workflow</h3>
+      <p>① Connect Drive &nbsp;② Add offers with terms &nbsp;③ Meet requirements &nbsp;④ Update posted/close dates &nbsp;⑤ Use cooldowns &amp; reminders</p>
+    </div>
+  </header>
 
-  <!-- Modal -->
-  <div class="modal-backdrop" id="form-modal">
-    <div class="modal-dialog">
-      <div class="panel" id="form-panel">
-        <div class="panel-header">
-          <h2 id="form-title">Add bank bonus</h2>
-          <div style="display:flex; align-items:center; gap:0.5rem;">
-            <span class="pill-muted pill" id="editing-pill" style="display:none;">Editing</span>
-            <button type="button" class="btn-secondary btn-sm" id="close-form-btn">Close</button>
-          </div>
-        </div>
-        <form id="bonus-form">
-          <input type="hidden" id="bonus-id" value="">
-          <div class="field-grid">
-
-            <!-- SECTION: Core Info -->
-            <div class="field-section-header">Core Info</div>
-
-            <div>
-              <label for="person">Person</label>
-              <select id="person">
-                <option value="you">You</option>
-                <option value="spouse">Spouse</option>
-                <option value="joint">Joint</option>
-              </select>
-            </div>
-            <div>
-              <label for="bank">Bank</label>
-              <input id="bank" type="text" required placeholder="e.g., BMO, Chase, SoFi">
-            </div>
-
-            <div>
-              <label for="accountName">Account name</label>
-              <input id="accountName" type="text" required placeholder="e.g., Smart Advantage Checking">
-            </div>
-            <div>
-              <label for="accountLast4">Account # (last 4)</label>
-              <input id="accountLast4" type="text" maxlength="4" placeholder="e.g., 4821">
-            </div>
-
-            <div>
-              <label for="accountHolder">Name on account</label>
-              <input id="accountHolder" type="text" placeholder="Exact name on bank account">
-            </div>
-            <div>
-              <label for="loginLabel">Login label (no password)</label>
-              <input id="loginLabel" type="text" placeholder="e.g., WF Checking (see password manager)">
-            </div>
-
-            <!-- SECTION: Bonus & Status -->
-            <div class="field-section-header">Bonus & Status</div>
-
-            <div>
-              <label for="bonusAmount">Bonus amount ($)</label>
-              <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g., 400">
-            </div>
-            <div>
-              <label for="referralBonus">Referral bonus amount ($)</label>
-              <input id="referralBonus" type="number" step="0.01" min="0" placeholder="e.g., 50">
-            </div>
-
-            <div>
-              <label for="status">Status</label>
-              <select id="status" required>
-                <option value="planned">Planned</option>
-                <option value="in_progress">In progress</option>
-                <option value="requirements_met">Requirements met / waiting for bonus</option>
-                <option value="bonus_posted">Bonus posted</option>
-                <option value="closed">Closed</option>
-                <option value="closed_repeat">Closed / will repeat in future</option>
-                <option value="closing">Account closure process started</option>
-                <option value="cancelled">Cancelled / denied</option>
-              </select>
-            </div>
-            <div>
-              <label for="perHousehold">Bonus rule</label>
-              <select id="perHousehold">
-                <option value="per_person">Per person</option>
-                <option value="per_household">Per household (address)</option>
-                <option value="lifetime_person">Lifetime once per person</option>
-                <option value="lifetime_household">Lifetime once per household</option>
-              </select>
-            </div>
-
-            <!-- SECTION: Dates -->
-            <div class="field-section-header">Dates</div>
-
-            <div>
-              <label for="dateOpened">Date opened</label>
-              <input id="dateOpened" type="date">
-            </div>
-            <div>
-              <label for="offerExpiration">Offer expiration date</label>
-              <input id="offerExpiration" type="date">
-              <div class="helper-text">When the sign-up offer itself expires.</div>
-            </div>
-
-            <div>
-              <label for="deadline">Deadline to meet requirements</label>
-              <input id="deadline" type="date">
-            </div>
-            <div>
-              <label for="dateRequirementsMet">Date requirements met</label>
-              <input id="dateRequirementsMet" type="date">
-            </div>
-
-            <div>
-              <label for="dateBonusPosted">Date bonus posted</label>
-              <input id="dateBonusPosted" type="date">
-            </div>
-            <div>
-              <label for="dateClosed">Date closed</label>
-              <input id="dateClosed" type="date">
-            </div>
-
-            <!-- SECTION: Requirements -->
-            <div class="field-section-header">Requirements</div>
-
-            <div>
-              <label for="minBalance">Minimum balance required ($)</label>
-              <input id="minBalance" type="number" step="0.01" min="0" placeholder="e.g., 1500">
-            </div>
-            <div>
-              <label for="minBalanceDays">Min balance hold duration (days)</label>
-              <input id="minBalanceDays" type="number" min="0" step="1" placeholder="e.g., 60">
-            </div>
-
-            <div>
-              <label for="ddAmount">Direct deposit amount ($)</label>
-              <input id="ddAmount" type="number" step="0.01" min="0" placeholder="e.g., 4000">
-            </div>
-            <div>
-              <label for="ddCount">DD count required</label>
-              <input id="ddCount" type="number" min="0" step="1" placeholder="e.g., 2">
-            </div>
-
-            <div class="field-full">
-              <label for="ddMethods">DD methods that worked</label>
-              <input id="ddMethods" type="text" placeholder="e.g., Plaid/Gusto payroll, ACH from Chase, Venmo">
-            </div>
-
-            <div>
-              <label for="chexSystems">ChexSystems / EWS pull</label>
-              <select id="chexSystems">
-                <option value="">Unknown</option>
-                <option value="none">None</option>
-                <option value="chex_soft">ChexSystems – Soft</option>
-                <option value="chex_hard">ChexSystems – Hard</option>
-                <option value="ews">EWS pull</option>
-                <option value="credit_soft">Credit – Soft</option>
-                <option value="credit_hard">Credit – Hard</option>
-              </select>
-            </div>
-            <div>
-              <label for="pullDate">Pull date</label>
-              <input id="pullDate" type="date">
-            </div>
-
-            <!-- SECTION: Fees -->
-            <div class="field-section-header">Fees</div>
-
-            <div>
-              <label for="monthlyFee">Monthly fee ($)</label>
-              <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g., 12">
-            </div>
-            <div>
-              <label for="etfAmount">Early termination fee ($)</label>
-              <input id="etfAmount" type="number" step="0.01" min="0" placeholder="e.g., 25">
-            </div>
-            <div>
-              <label for="etfDays">ETF hold period (days)</label>
-              <input id="etfDays" type="number" min="0" step="1" placeholder="e.g., 180">
-              <div class="helper-text">Days after opening before you can close without the fee.</div>
-            </div>
-            <div></div>
-
-            <!-- SECTION: Cooldown & Repeat -->
-            <div class="field-section-header">Cooldown & Repeat</div>
-
-            <div>
-              <label for="cooldownPreset">Repeat rule preset</label>
-              <select id="cooldownPreset">
-                <option value="custom">Custom / not set</option>
-                <option value="12">Wait 12 months</option>
-                <option value="24">Wait 24 months</option>
-                <option value="lifetime">Once per lifetime</option>
-              </select>
-            </div>
-            <div>
-              <label for="cooldownMonths">Cooldown to repeat (months)</label>
-              <input id="cooldownMonths" type="number" min="0" step="1" placeholder="e.g., 12">
-            </div>
-
-            <div>
-              <label for="repeatAnchor">Repeat rule anchor</label>
-              <select id="repeatAnchor">
-                <option value="auto">Automatic (bonus then closed)</option>
-                <option value="bonus">Use bonus posted date</option>
-                <option value="closed">Use account closed date</option>
-              </select>
-            </div>
-            <div>
-              <label for="plannedLifeMonths">Planned account life (months)</label>
-              <input id="plannedLifeMonths" type="number" min="0" step="1" placeholder="e.g., 6">
-            </div>
-
-            <!-- SECTION: Reminders -->
-            <div class="field-section-header">Reminders</div>
-
-            <div>
-              <label for="remindBeforeDeadlineDays">Remind before deadline (days)</label>
-              <input id="remindBeforeDeadlineDays" type="number" min="0" step="1" placeholder="e.g., 7">
-            </div>
-            <div>
-              <label for="remindBeforeRepeatDays">Remind before repeat date (days)</label>
-              <input id="remindBeforeRepeatDays" type="number" min="0" step="1" placeholder="e.g., 30">
-            </div>
-            <div>
-              <label for="remindBeforeCloseDays">Remind before close date (days)</label>
-              <input id="remindBeforeCloseDays" type="number" min="0" step="1" placeholder="e.g., 14">
-            </div>
-            <div></div>
-
-            <!-- SECTION: Notes -->
-            <div class="field-section-header">Notes & Links</div>
-
-            <div class="field-full">
-              <label for="requirements">Requirements summary</label>
-              <textarea id="requirements" placeholder="e.g., $4,000 DD within 90 days; 10 debit transactions; maintain $1k balance..."></textarea>
-            </div>
-            <div class="field-full">
-              <label for="feeWaiver">Fee waiver details</label>
-              <textarea id="feeWaiver" placeholder="e.g., waive with $4k DD or $1,500 min balance..."></textarea>
-            </div>
-            <div class="field-full">
-              <label for="eligibilityNotes">Eligibility / state notes</label>
-              <textarea id="eligibilityNotes" placeholder="e.g., CA only; new customers; no bonus if had account in last 12 months."></textarea>
-            </div>
-            <div class="field-full">
-              <label for="sourceUrl">Source URL (Doctor of Credit or bank)</label>
-              <input id="sourceUrl" type="text" placeholder="Paste the specific DoC article URL or bank landing page">
-            </div>
-            <div class="field-full">
-              <label for="notes">Notes</label>
-              <textarea id="notes" placeholder="Tracking notes: which ACH coded as DD, clawback risk, 1099‑INT details, follow‑ups, etc."></textarea>
-            </div>
-          </div>
-
-          <div class="actions-row">
-            <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
-            <button type="button" class="btn-secondary" id="reset-btn">Clear form</button>
-            <button type="submit" class="btn-primary" id="save-btn">
-              <span id="save-btn-label">Add bonus</span>
-            </button>
-          </div>
-          <div id="form-error" class="error-text" style="display:none;"></div>
-        </form>
-      </div>
+  <!-- Summary -->
+  <div class="summary-grid" id="summary">
+    <div class="summary-card">
+      <div class="summary-label">Expected Bonuses</div>
+      <div class="summary-value" id="summary-expected">$0</div>
+      <div class="summary-sub">All non‑cancelled</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Received (All Time)</div>
+      <div class="summary-value" id="summary-received">$0</div>
+      <div class="summary-sub">Based on posted dates</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Received This Year</div>
+      <div class="summary-value" id="summary-tax-year">$0</div>
+      <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Pending This Year</div>
+      <div class="summary-value" id="summary-pending-year">$0</div>
+      <div class="summary-sub">Planned / in progress</div>
     </div>
   </div>
 
-  <script>
-    (function() {
-      const state = {
-        bonuses: [],
-        editingId: null,
-        personFilter: 'all'
-      };
+  <!-- Per-person summary -->
+  <div class="summary-grid" id="person-summary" style="margin-bottom:16px;">
+    <div class="summary-card">
+      <div class="summary-label">You — Expected</div>
+      <div class="summary-value" id="ps-you-expected">$0</div>
+      <div class="summary-sub" id="ps-you-roi"></div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Spouse — Expected</div>
+      <div class="summary-value" id="ps-spouse-expected">$0</div>
+      <div class="summary-sub" id="ps-spouse-roi"></div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Joint — Expected</div>
+      <div class="summary-value" id="ps-joint-expected">$0</div>
+      <div class="summary-sub" id="ps-joint-roi"></div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Avg $/day (open)</div>
+      <div class="summary-value" id="ps-avg-roi" style="color:var(--text)">—</div>
+      <div class="summary-sub">Bonus ÷ days open</div>
+    </div>
+  </div>
 
-      const STORAGE_KEY = 'bankBonusData_v2';
-      const DRIVE_FILE_ID_KEY = 'bankBonusDriveFileId_v1';
-      const DRIVE_FILE_NAME = 'bank-bonus-tracker.json';
+  <!-- Pipeline -->
+  <div class="pipeline" id="pipeline-bar">
+    <div class="pipe-stage"><div class="pipe-label">Planned</div><div class="pipe-count" id="pipe-planned">0</div></div>
+    <div class="pipe-stage"><div class="pipe-label">In Progress</div><div class="pipe-count" id="pipe-in_progress">0</div></div>
+    <div class="pipe-stage"><div class="pipe-label">Req. Met</div><div class="pipe-count" id="pipe-requirements_met">0</div></div>
+    <div class="pipe-stage"><div class="pipe-label">Posted</div><div class="pipe-count" id="pipe-bonus_posted">0</div></div>
+    <div class="pipe-stage"><div class="pipe-label">Closing</div><div class="pipe-count" id="pipe-closing">0</div></div>
+    <div class="pipe-stage"><div class="pipe-label">Closed</div><div class="pipe-count" id="pipe-closed">0</div></div>
+  </div>
 
-      let driveFileId = null;
-      let isDriveConnected = false;
+  <!-- This week -->
+  <div class="week-widget">
+    <div class="week-widget-head"><span class="live-dot"></span>&nbsp; This Week's Actions</div>
+    <div id="week-list"><span class="week-empty">Nothing urgent this week.</span></div>
+  </div>
 
-      const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const currentYear = today.getFullYear();
+  <!-- Person filter -->
+  <div class="person-tabs" id="person-tabs">
+    <button class="person-tab active" data-person="all">All</button>
+    <button class="person-tab" data-person="you">You</button>
+    <button class="person-tab" data-person="spouse">Spouse</button>
+    <button class="person-tab" data-person="joint">Joint</button>
+  </div>
 
-      const el = (id) => document.getElementById(id);
+  <!-- Main table panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Active &amp; Completed Bonuses</span>
+      <button type="button" class="btn-primary btn-sm" id="open-form-btn" disabled>+ Add Bonus</button>
+    </div>
+    <div class="table-toolbar">
+      <div class="toolbar-group">
+        <span class="tag tag-count" id="row-count-tag">0 bonuses</span>
+      </div>
+      <div class="toolbar-group">
+        <select id="filter-status" class="small-select">
+          <option value="all">All statuses</option>
+          <option value="open">Only open</option>
+          <option value="in_progress">In progress</option>
+          <option value="bonus_posted">Bonus posted</option>
+          <option value="ready_to_close">Ready to close</option>
+          <option value="repeat_ready">Repeat eligible</option>
+        </select>
+        <input type="text" id="search-text" class="small-input" placeholder="Search bank or account…" style="width:180px; font-size:12px; padding:6px 10px;">
+      </div>
+    </div>
+    <div class="table-wrapper" id="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Bank / Account</th>
+            <th>Person</th>
+            <th>Status</th>
+            <th>Bonus</th>
+            <th>Key Dates</th>
+            <th>Requirements</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="bonus-rows"></tbody>
+      </table>
+      <div class="empty-state" id="empty-state">No bonuses yet — connect Drive then add your first offer.</div>
+    </div>
+  </div>
 
-      const formEl = el('bonus-form');
-      const formModalEl = el('form-modal');
-      const openFormBtn = el('open-form-btn');
-      const closeFormBtn = el('close-form-btn');
-      const cancelBtn = el('cancel-btn');
-      const formErrorEl = el('form-error');
-      const editingPillEl = el('editing-pill');
-      const formTitleEl = el('form-title');
-      const saveBtnLabelEl = el('save-btn-label');
+  <!-- Reminders -->
+  <div class="panel" id="reminders-panel">
+    <div class="panel-header">
+      <span class="panel-title">Upcoming Repeats &amp; Deadlines</span>
+    </div>
+    <p class="helper-text" id="reminders-empty">No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.</p>
+    <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
+  </div>
 
-      // ── Helpers ──────────────────────────────────────────────────────────────
+  <!-- Drive -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Backup &amp; Google Drive</span>
+    </div>
+    <p class="helper-text">Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync. On connect, existing Drive data loads automatically.</p>
+    <div class="drive-section">
+      <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled>Connect Drive</button>
+      <button type="button" class="btn-secondary btn-sm" id="drive-save-btn" disabled>Save to Drive</button>
+      <span class="drive-status" id="drive-status">Not connected.</span>
+    </div>
+  </div>
 
-      function uid() {
-        return Date.now().toString(36) + Math.random().toString(36).slice(2);
+</div><!-- /.shell -->
+
+<!-- Modal -->
+<div class="modal-backdrop" id="form-modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <span class="modal-title" id="form-title">Add Bank Bonus</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="pill pill-amber" id="editing-pill" style="display:none;">Editing</span>
+        <button type="button" class="btn-ghost btn-sm" id="close-form-btn">✕ Close</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <form id="bonus-form">
+        <input type="hidden" id="bonus-id" value="">
+        <div class="field-grid">
+
+          <div class="field-section-header">Core Info</div>
+
+          <div>
+            <label for="person">Person</label>
+            <select id="person">
+              <option value="you">You</option>
+              <option value="spouse">Spouse</option>
+              <option value="joint">Joint</option>
+            </select>
+          </div>
+          <div>
+            <label for="bank">Bank *</label>
+            <input id="bank" type="text" required placeholder="e.g. Chase, BMO, SoFi">
+          </div>
+          <div>
+            <label for="accountName">Account Name *</label>
+            <input id="accountName" type="text" required placeholder="e.g. Smart Advantage Checking">
+          </div>
+          <div>
+            <label for="accountLast4">Account # (last 4)</label>
+            <input id="accountLast4" type="text" maxlength="4" placeholder="e.g. 4821">
+          </div>
+          <div>
+            <label for="accountHolder">Name on Account</label>
+            <input id="accountHolder" type="text" placeholder="Exact name on bank account">
+          </div>
+          <div>
+            <label for="loginLabel">Login Label (no password)</label>
+            <input id="loginLabel" type="text" placeholder="e.g. WF Checking (see 1Password)">
+          </div>
+
+          <div class="field-section-header">Bonus &amp; Status</div>
+
+          <div>
+            <label for="bonusAmount">Bonus Amount ($) *</label>
+            <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g. 400">
+          </div>
+          <div>
+            <label for="referralBonus">Referral Bonus ($)</label>
+            <input id="referralBonus" type="number" step="0.01" min="0" placeholder="e.g. 50">
+          </div>
+          <div>
+            <label for="status">Status *</label>
+            <select id="status" required>
+              <option value="planned">Planned</option>
+              <option value="in_progress">In progress</option>
+              <option value="requirements_met">Requirements met / waiting</option>
+              <option value="bonus_posted">Bonus posted</option>
+              <option value="closed">Closed</option>
+              <option value="closed_repeat">Closed / will repeat</option>
+              <option value="closing">Closing started</option>
+              <option value="cancelled">Cancelled / denied</option>
+            </select>
+          </div>
+          <div>
+            <label for="perHousehold">Bonus Rule</label>
+            <select id="perHousehold">
+              <option value="per_person">Per person</option>
+              <option value="per_household">Per household</option>
+              <option value="lifetime_person">Lifetime / per person</option>
+              <option value="lifetime_household">Lifetime / per household</option>
+            </select>
+          </div>
+
+          <div class="field-section-header">Dates</div>
+
+          <div>
+            <label for="dateOpened">Date Opened</label>
+            <input id="dateOpened" type="date">
+          </div>
+          <div>
+            <label for="offerExpiration">Offer Expiration</label>
+            <input id="offerExpiration" type="date">
+            <div class="helper-text">When the sign-up offer expires.</div>
+          </div>
+          <div>
+            <label for="deadline">Deadline to Meet Requirements</label>
+            <input id="deadline" type="date">
+          </div>
+          <div>
+            <label for="dateRequirementsMet">Date Requirements Met</label>
+            <input id="dateRequirementsMet" type="date">
+          </div>
+          <div>
+            <label for="dateBonusPosted">Date Bonus Posted</label>
+            <input id="dateBonusPosted" type="date">
+          </div>
+          <div>
+            <label for="dateClosed">Date Closed</label>
+            <input id="dateClosed" type="date">
+          </div>
+
+          <div class="field-section-header">Requirements</div>
+
+          <div>
+            <label for="minBalance">Min Balance Required ($)</label>
+            <input id="minBalance" type="number" step="0.01" min="0" placeholder="e.g. 1500">
+          </div>
+          <div>
+            <label for="minBalanceDays">Min Balance Hold (days)</label>
+            <input id="minBalanceDays" type="number" min="0" step="1" placeholder="e.g. 60">
+          </div>
+          <div>
+            <label for="ddAmount">Direct Deposit Amount ($)</label>
+            <input id="ddAmount" type="number" step="0.01" min="0" placeholder="e.g. 4000">
+          </div>
+          <div>
+            <label for="ddCount">DD Count Required</label>
+            <input id="ddCount" type="number" min="0" step="1" placeholder="e.g. 2">
+          </div>
+          <div class="field-full">
+            <label for="ddMethods">DD Methods That Worked</label>
+            <input id="ddMethods" type="text" placeholder="e.g. Plaid/Gusto payroll, ACH from Chase">
+          </div>
+          <div>
+            <label for="chexSystems">ChexSystems / EWS Pull</label>
+            <select id="chexSystems">
+              <option value="">Unknown</option>
+              <option value="none">None</option>
+              <option value="chex_soft">ChexSystems – Soft</option>
+              <option value="chex_hard">ChexSystems – Hard</option>
+              <option value="ews">EWS pull</option>
+              <option value="credit_soft">Credit – Soft</option>
+              <option value="credit_hard">Credit – Hard</option>
+            </select>
+          </div>
+          <div>
+            <label for="pullDate">Pull Date</label>
+            <input id="pullDate" type="date">
+          </div>
+
+          <div class="field-section-header">Fees</div>
+
+          <div>
+            <label for="monthlyFee">Monthly Fee ($)</label>
+            <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g. 12">
+          </div>
+          <div>
+            <label for="etfAmount">Early Termination Fee ($)</label>
+            <input id="etfAmount" type="number" step="0.01" min="0" placeholder="e.g. 25">
+          </div>
+          <div>
+            <label for="etfDays">ETF Hold Period (days)</label>
+            <input id="etfDays" type="number" min="0" step="1" placeholder="e.g. 180">
+            <div class="helper-text">Days after opening before you can close without the fee.</div>
+          </div>
+          <div></div>
+
+          <div class="field-section-header">Cooldown &amp; Repeat</div>
+
+          <div>
+            <label for="cooldownPreset">Repeat Rule Preset</label>
+            <select id="cooldownPreset">
+              <option value="custom">Custom / not set</option>
+              <option value="12">Wait 12 months</option>
+              <option value="24">Wait 24 months</option>
+              <option value="lifetime">Once per lifetime</option>
+            </select>
+          </div>
+          <div>
+            <label for="cooldownMonths">Cooldown to Repeat (months)</label>
+            <input id="cooldownMonths" type="number" min="0" step="1" placeholder="e.g. 12">
+          </div>
+          <div>
+            <label for="repeatAnchor">Repeat Rule Anchor</label>
+            <select id="repeatAnchor">
+              <option value="auto">Auto (bonus then closed)</option>
+              <option value="bonus">Use bonus posted date</option>
+              <option value="closed">Use account closed date</option>
+            </select>
+          </div>
+          <div>
+            <label for="plannedLifeMonths">Planned Account Life (months)</label>
+            <input id="plannedLifeMonths" type="number" min="0" step="1" placeholder="e.g. 6">
+          </div>
+
+          <div class="field-section-header">Reminders</div>
+
+          <div>
+            <label for="remindBeforeDeadlineDays">Remind Before Deadline (days)</label>
+            <input id="remindBeforeDeadlineDays" type="number" min="0" step="1" placeholder="e.g. 7">
+          </div>
+          <div>
+            <label for="remindBeforeRepeatDays">Remind Before Repeat (days)</label>
+            <input id="remindBeforeRepeatDays" type="number" min="0" step="1" placeholder="e.g. 30">
+          </div>
+          <div>
+            <label for="remindBeforeCloseDays">Remind Before Close (days)</label>
+            <input id="remindBeforeCloseDays" type="number" min="0" step="1" placeholder="e.g. 14">
+          </div>
+          <div></div>
+
+          <div class="field-section-header">Notes &amp; Links</div>
+
+          <div class="field-full">
+            <label for="requirements">Requirements Summary</label>
+            <textarea id="requirements" placeholder="e.g. $4,000 DD within 90 days; 10 debit transactions; maintain $1k balance…"></textarea>
+          </div>
+          <div class="field-full">
+            <label for="feeWaiver">Fee Waiver Details</label>
+            <textarea id="feeWaiver" placeholder="e.g. waive with $4k DD or $1,500 min balance…"></textarea>
+          </div>
+          <div class="field-full">
+            <label for="eligibilityNotes">Eligibility / State Notes</label>
+            <textarea id="eligibilityNotes" placeholder="e.g. CA only; new customers; no bonus if had account in last 12 months."></textarea>
+          </div>
+          <div class="field-full">
+            <label for="sourceUrl">Source URL (Doctor of Credit or bank)</label>
+            <input id="sourceUrl" type="text" placeholder="Paste DoC article URL or bank landing page">
+          </div>
+          <div class="field-full">
+            <label for="notes">Notes</label>
+            <textarea id="notes" placeholder="Which ACH coded as DD, clawback risk, 1099‑INT details, follow‑ups, etc."></textarea>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button type="button" class="btn-ghost btn-sm" id="cancel-btn">Cancel</button>
+          <button type="button" class="btn-secondary btn-sm" id="reset-btn">Clear Form</button>
+          <button type="submit" class="btn-primary btn-sm" id="save-btn">
+            <span id="save-btn-label">Add Bonus</span>
+          </button>
+        </div>
+        <div id="form-error" class="error-text" style="display:none;"></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const state = { bonuses: [], editingId: null, personFilter: 'all' };
+  const STORAGE_KEY         = 'bankBonusData_v2';
+  const DRIVE_FILE_ID_KEY   = 'bankBonusDriveFileId_v1';
+  const DRIVE_FOLDER_ID_KEY = 'bankBonusDriveFolderId_v1';
+  // DRIVE_FILE_NAME / DRIVE_FOLDER_NAME defined in top <script>
+  let driveFileId   = null;
+  let driveFolderId = null;
+  let isDriveConnected = false;
+  const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+  const today = new Date(); today.setHours(0,0,0,0);
+  const currentYear = today.getFullYear();
+  const el = id => document.getElementById(id);
+  const formEl = el('bonus-form');
+  const formModalEl = el('form-modal');
+  const openFormBtn = el('open-form-btn');
+  const closeFormBtn = el('close-form-btn');
+  const cancelBtn = el('cancel-btn');
+  const formErrorEl = el('form-error');
+  const editingPillEl = el('editing-pill');
+  const formTitleEl = el('form-title');
+  const saveBtnLabelEl = el('save-btn-label');
+
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+  function parseDate(str) { if (!str) return null; const d = new Date(str + 'T00:00:00'); return isNaN(d) ? null : d; }
+  function daysBetween(a, b) { if (!a || !b) return null; return Math.round((b - a) / 86400000); }
+  function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return d; }
+  function fmtDate(d) { if (!d) return '—'; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+
+  function computeNextEligible(b) {
+    const months = b.cooldownPreset === 'lifetime' ? null : (parseInt(b.cooldownMonths) || null);
+    if (!months) return null;
+    let anchor = null;
+    const ap = b.repeatAnchor || 'auto';
+    if (ap === 'bonus' || (ap === 'auto' && b.dateBonusPosted)) anchor = parseDate(b.dateBonusPosted);
+    else if (ap === 'closed' || (ap === 'auto' && b.dateClosed)) anchor = parseDate(b.dateClosed);
+    if (!anchor) return null;
+    return addMonths(anchor, months);
+  }
+
+  function isRepeatReady(b) { const n = computeNextEligible(b); return n ? n <= today : false; }
+
+  function isReadyToClose(b) {
+    if (b.status !== 'bonus_posted' || !b.dateBonusPosted) return false;
+    const etfDays = parseInt(b.etfDays) || 0;
+    const posted = parseDate(b.dateBonusPosted);
+    if (!posted) return false;
+    const safe = new Date(posted); safe.setDate(safe.getDate() + etfDays);
+    return today >= safe;
+  }
+
+  function urgencyClass(b) {
+    if (!b.deadline) return '';
+    const dl = parseDate(b.deadline);
+    if (!dl) return '';
+    const d = daysBetween(today, dl);
+    if (d === null) return '';
+    if (d <= 7 && d >= 0) return 'urgency-red';
+    if (d <= 30 && d >= 0) return 'urgency-yellow';
+    return '';
+  }
+
+  function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bonuses)); }
+  function loadLocal() { try { const r = localStorage.getItem(STORAGE_KEY); if (r) state.bonuses = JSON.parse(r); } catch(e) {} }
+  function serializeData() { return JSON.stringify({ version: 2, bonuses: state.bonuses }, null, 2); }
+  function deserializeData(raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p; if (p && Array.isArray(p.bonuses)) return p.bonuses; return []; }
+
+  // Upload or update a file's content via multipart upload.
+  // folderId is only used when creating a new file (first save).
+  async function uploadFileToDrive(fileId, folderId, content) {
+    const token = gapi.auth.getToken().access_token;
+    const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
+    const boundary = 'bbt_boundary_' + Date.now();
+    const body = [
+      `--${boundary}`,
+      'Content-Type: application/json',
+      '',
+      JSON.stringify(fileId ? metadata : { ...metadata, parents: [folderId] }),
+      `--${boundary}`,
+      'Content-Type: application/json',
+      '',
+      content,
+      `--${boundary}--`,
+    ].join('\r\n');
+
+    const url = fileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+    const res = await fetch(url, {
+      method: fileId ? 'PATCH' : 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    return await res.json(); // { id, ... }
+  }
+
+  async function driveSave() {
+    if (!isDriveConnected) return;
+    const content = serializeData();
+    try {
+      setDriveStatus('↻ Saving to Drive…');
+      // Ensure folder exists in this user's Drive
+      if (!driveFolderId) {
+        setDriveStatus('↻ Locating / creating folder…');
+        driveFolderId = await getOrCreateFolder();
+        localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
       }
-
-      function parseDate(str) {
-        if (!str) return null;
-        const d = new Date(str + 'T00:00:00');
-        return isNaN(d) ? null : d;
+      const result = await uploadFileToDrive(driveFileId, driveFolderId, content);
+      if (!driveFileId) {
+        driveFileId = result.id;
+        localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
       }
+      setDriveStatus('✓ Saved to Drive — ' + new Date().toLocaleTimeString());
+    } catch(err) {
+      setDriveStatus('⚠ Drive save failed: ' + (err.message || err));
+    }
+  }
 
-      function daysBetween(a, b) {
-        if (!a || !b) return null;
-        return Math.round((b - a) / 86400000);
-      }
+  async function driveLoad() {
+    try {
+      setDriveStatus('↻ Looking for your folder…');
 
-      function addMonths(date, months) {
-        const d = new Date(date);
-        d.setMonth(d.getMonth() + months);
-        return d;
-      }
+      // Step 1: find or create the folder in the user's Drive
+      driveFolderId = await getOrCreateFolder();
+      localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
+      setDriveStatus('↻ Searching for data file…');
 
-      function fmtDate(d) {
-        if (!d) return '—';
-        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      }
+      // Step 2: look for the data file inside that folder
+      const { id, modifiedTime, exists } = await findFileInFolder(driveFolderId);
 
-      function computeNextEligible(b) {
-        const months = b.cooldownPreset === 'lifetime' ? null : (parseInt(b.cooldownMonths) || null);
-        if (!months) return null;
-        let anchor = null;
-        const anchorPref = b.repeatAnchor || 'auto';
-        if (anchorPref === 'bonus' || (anchorPref === 'auto' && b.dateBonusPosted)) anchor = parseDate(b.dateBonusPosted);
-        else if (anchorPref === 'closed' || (anchorPref === 'auto' && b.dateClosed)) anchor = parseDate(b.dateClosed);
-        if (!anchor) return null;
-        return addMonths(anchor, months);
-      }
-
-      function isRepeatReady(b) {
-        const next = computeNextEligible(b);
-        if (!next) return false;
-        return next <= today;
-      }
-
-      function isReadyToClose(b) {
-        if (b.status !== 'bonus_posted') return false;
-        if (!b.dateBonusPosted) return false;
-        const etfDays = parseInt(b.etfDays) || 0;
-        const postedDate = parseDate(b.dateBonusPosted);
-        if (!postedDate) return false;
-        const safeClose = addMonths(postedDate, 0);
-        safeClose.setDate(safeClose.getDate() + etfDays);
-        return today >= safeClose;
-      }
-
-      function urgencyClass(b) {
-        if (!b.deadline) return '';
-        const dl = parseDate(b.deadline);
-        if (!dl) return '';
-        const daysLeft = daysBetween(today, dl);
-        if (daysLeft === null) return '';
-        if (daysLeft <= 7 && daysLeft >= 0) return 'urgency-red';
-        if (daysLeft <= 30 && daysLeft >= 0) return 'urgency-yellow';
-        return '';
-      }
-
-      // ── Persistence ──────────────────────────────────────────────────────────
-
-      function saveLocal() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bonuses));
-      }
-
-      function loadLocal() {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) state.bonuses = JSON.parse(raw);
-        } catch(e) {}
-      }
-
-      function serializeData() {
-        return JSON.stringify({ version: 2, bonuses: state.bonuses }, null, 2);
-      }
-
-      function deserializeData(raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed; // v1 compat
-        if (parsed && Array.isArray(parsed.bonuses)) return parsed.bonuses;
-        return [];
-      }
-
-      // ── Google Drive ─────────────────────────────────────────────────────────
-
-      async function driveSave() {
-        if (!isDriveConnected) return;
-        const body = serializeData();
-        const blob = new Blob([body], { type: 'application/json' });
-        const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
-
-        try {
-          if (driveFileId) {
-            await gapi.client.request({
-              path: `/upload/drive/v3/files/${driveFileId}`,
-              method: 'PATCH',
-              params: { uploadType: 'multipart' },
-              headers: { 'Content-Type': 'multipart/related; boundary=boundary123' },
-              body: `--boundary123\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--boundary123\r\nContent-Type: application/json\r\n\r\n${body}\r\n--boundary123--`
-            });
-          } else {
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify({ ...metadata, parents: [DRIVE_FOLDER_ID] })], { type: 'application/json' }));
-            form.append('file', blob);
-            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${gapi.auth.getToken().access_token}` },
-              body: form
-            });
-            const data = await res.json();
-            driveFileId = data.id;
-            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-          }
-          el('drive-status').textContent = '✅ Saved to Drive — ' + new Date().toLocaleTimeString();
-        } catch(err) {
-          el('drive-status').textContent = '⚠️ Drive save failed: ' + (err.message || err);
-        }
-      }
-
-      async function driveLoad() {
-        // Search for existing file by name in the folder
-        try {
-          const res = await gapi.client.drive.files.list({
-            q: `name='${DRIVE_FILE_NAME}' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
-            fields: 'files(id,name,modifiedTime)',
-            spaces: 'drive'
-          });
-          const files = res.result.files;
-          if (files && files.length > 0) {
-            const file = files[0];
-            driveFileId = file.id;
-            localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-            // Fetch content
-            const contentRes = await gapi.client.drive.files.get({
-              fileId: driveFileId,
-              alt: 'media'
-            });
-            const loaded = deserializeData(typeof contentRes.body === 'string' ? contentRes.body : JSON.stringify(contentRes.result));
-            state.bonuses = loaded;
-            saveLocal();
-            renderAll();
-            el('drive-status').textContent = `✅ Loaded from Drive (${files.length} file found, modified ${new Date(file.modifiedTime).toLocaleString()})`;
-          } else {
-            // No existing file — save current data to Drive
-            el('drive-status').textContent = '📁 No existing file found. Will create one on next save.';
-            await driveSave();
-          }
-        } catch(err) {
-          el('drive-status').textContent = '⚠️ Drive load failed: ' + (err.message || err);
-        }
-      }
-
-      function connectDrive() {
-        tokenClient.callback = async (resp) => {
-          if (resp.error) {
-            el('drive-status').textContent = '⚠️ Auth error: ' + resp.error;
-            return;
-          }
-          isDriveConnected = true;
-          el('drive-connect-btn').textContent = '✅ Drive connected';
-          el('drive-connect-btn').disabled = true;
-          el('drive-save-btn').disabled = false;
-          el('open-form-btn').disabled = false;
-          el('drive-status').textContent = '🔄 Loading data from Drive…';
-          await driveLoad();
-        };
-
-        if (gapi.client.getToken() === null) {
-          tokenClient.requestAccessToken({ prompt: 'consent' });
-        } else {
-          tokenClient.requestAccessToken({ prompt: '' });
-        }
-      }
-
-      // Auto-save to Drive after every mutation
-      function persistAll() {
+      if (exists) {
+        driveFileId = id;
+        localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
+        setDriveStatus('↻ Loading data…');
+        const cr = await gapi.client.drive.files.get({ fileId: driveFileId, alt: 'media' });
+        const raw = typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result);
+        state.bonuses = deserializeData(raw);
         saveLocal();
-        if (isDriveConnected) {
-          // Debounce Drive saves by 1.5s
-          clearTimeout(persistAll._timer);
-          persistAll._timer = setTimeout(driveSave, 1500);
-        }
-      }
-
-      // ── Render ───────────────────────────────────────────────────────────────
-
-      function statusLabel(s) {
-        return {
-          planned: 'Planned',
-          in_progress: 'In progress',
-          requirements_met: 'Req. met',
-          bonus_posted: 'Bonus posted',
-          closed: 'Closed',
-          closed_repeat: 'Closed / repeat',
-          closing: 'Closing',
-          cancelled: 'Cancelled'
-        }[s] || s;
-      }
-
-      function personTag(p) {
-        const labels = { you: 'You', spouse: 'Spouse', joint: 'Joint' };
-        const classes = { you: 'tag-person-you', spouse: 'tag-person-spouse', joint: 'tag-person-joint' };
-        return `<span class="tag ${classes[p] || ''}">${labels[p] || p || '—'}</span>`;
-      }
-
-      function renderSummary() {
-        const nonCancelled = state.bonuses.filter(b => b.status !== 'cancelled');
-        const received = state.bonuses.filter(b => b.dateBonusPosted);
-        const taxYear = state.bonuses.filter(b => {
-          if (!b.dateBonusPosted) return false;
-          return new Date(b.dateBonusPosted).getFullYear() === currentYear;
-        });
-        const pending = state.bonuses.filter(b =>
-          ['planned','in_progress','requirements_met'].includes(b.status)
-        );
-
-        const sum = arr => arr.reduce((a,b) => a + (parseFloat(b.bonusAmount) || 0), 0);
-
-        el('summary-expected').textContent = currency.format(sum(nonCancelled));
-        el('summary-received').textContent = currency.format(sum(received));
-        el('summary-tax-year').textContent = currency.format(sum(taxYear));
-        el('summary-pending-year').textContent = currency.format(sum(pending));
-        el('summary-tax-year-label').textContent = `${currentYear} calendar year`;
-
-        // Per-person
-        ['you','spouse','joint'].forEach(person => {
-          const pb = nonCancelled.filter(b => b.person === person);
-          el(`ps-${person}-expected`).textContent = currency.format(sum(pb));
-          // ROI: avg $/day for open accounts
-          const open = pb.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
-          let totalRoi = 0, roiCount = 0;
-          open.forEach(b => {
-            const opened = parseDate(b.dateOpened);
-            const days = daysBetween(opened, today);
-            if (days && days > 0 && b.bonusAmount) {
-              totalRoi += parseFloat(b.bonusAmount) / days;
-              roiCount++;
-            }
-          });
-          el(`ps-${person}-roi`).textContent = roiCount > 0 ? `~${currency.format(totalRoi / roiCount)}/day avg` : '';
-        });
-
-        // Overall avg $/day
-        const openAll = nonCancelled.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
-        let totalRoi = 0, roiCount = 0;
-        openAll.forEach(b => {
-          const opened = parseDate(b.dateOpened);
-          const days = daysBetween(opened, today);
-          if (days && days > 0 && b.bonusAmount) {
-            totalRoi += parseFloat(b.bonusAmount) / days;
-            roiCount++;
-          }
-        });
-        el('ps-avg-roi').textContent = roiCount > 0 ? currency.format(totalRoi) + '/day' : '—';
-      }
-
-      function renderPipeline() {
-        const stages = ['planned','in_progress','requirements_met','bonus_posted','closing','closed'];
-        stages.forEach(s => {
-          const countEl = el(`pipe-${s}`);
-          if (countEl) countEl.textContent = state.bonuses.filter(b => b.status === s).length;
-        });
-      }
-
-      function renderWeekWidget() {
-        const weekOut = new Date(today);
-        weekOut.setDate(weekOut.getDate() + 7);
-        const items = [];
-
-        state.bonuses.forEach(b => {
-          // Deadline within 7 days
-          if (b.deadline) {
-            const dl = parseDate(b.deadline);
-            if (dl && dl >= today && dl <= weekOut) {
-              const days = daysBetween(today, dl);
-              items.push(`🔴 <strong>${b.bank}</strong> deadline in ${days} day${days===1?'':'s'} (${fmtDate(dl)})`);
-            }
-          }
-          // Ready to close
-          if (isReadyToClose(b)) {
-            items.push(`✅ <strong>${b.bank}</strong> ready to close — bonus posted, ETF period elapsed`);
-          }
-          // Repeat eligible
-          if (isRepeatReady(b) && ['closed','closed_repeat'].includes(b.status)) {
-            items.push(`🔁 <strong>${b.bank}</strong> cooldown elapsed — eligible to repeat`);
-          }
-          // Planned close date within 7 days
-          if (b.dateOpened && b.plannedLifeMonths) {
-            const opened = parseDate(b.dateOpened);
-            if (opened) {
-              const plannedClose = addMonths(opened, parseInt(b.plannedLifeMonths));
-              if (plannedClose >= today && plannedClose <= weekOut) {
-                const days = daysBetween(today, plannedClose);
-                items.push(`📅 <strong>${b.bank}</strong> planned close in ${days} day${days===1?'':'s'} (${fmtDate(plannedClose)})`);
-              }
-            }
-          }
-        });
-
-        const weekList = el('week-list');
-        if (items.length === 0) {
-          weekList.innerHTML = '<span class="week-empty">Nothing urgent this week. 🎉</span>';
-        } else {
-          weekList.innerHTML = items.map(i => `<div class="week-item">${i}</div>`).join('');
-        }
-      }
-
-      function filteredBonuses() {
-        const statusFilter = el('filter-status').value;
-        const searchText = (el('search-text').value || '').toLowerCase();
-        const personFilter = state.personFilter;
-
-        return state.bonuses.filter(b => {
-          // Person filter
-          if (personFilter !== 'all' && b.person !== personFilter) return false;
-
-          // Status filter
-          if (statusFilter === 'open') {
-            if (['closed','closed_repeat','cancelled'].includes(b.status)) return false;
-          } else if (statusFilter === 'ready_to_close') {
-            if (!isReadyToClose(b)) return false;
-          } else if (statusFilter === 'repeat_ready') {
-            if (!isRepeatReady(b)) return false;
-          } else if (statusFilter !== 'all') {
-            if (b.status !== statusFilter) return false;
-          }
-
-          // Search
-          if (searchText) {
-            const haystack = `${b.bank} ${b.accountName} ${b.accountHolder || ''} ${b.notes || ''}`.toLowerCase();
-            if (!haystack.includes(searchText)) return false;
-          }
-
-          return true;
-        });
-      }
-
-      function renderTable() {
-        const tbody = el('bonus-rows');
-        const emptyState = el('empty-state');
-        const rowCountTag = el('row-count-tag');
-        const filtered = filteredBonuses();
-
-        rowCountTag.textContent = `${filtered.length} bonus${filtered.length !== 1 ? 'es' : ''}`;
-        tbody.innerHTML = '';
-
-        if (filtered.length === 0) {
-          emptyState.style.display = '';
-          return;
-        }
-        emptyState.style.display = 'none';
-
-        filtered.forEach(b => {
-          const nextEl = computeNextEligible(b);
-          const repeatReady = isRepeatReady(b);
-          const readyClose = isReadyToClose(b);
-
-          const tr = document.createElement('tr');
-          const urg = urgencyClass(b);
-          if (urg) tr.classList.add(urg);
-
-          // Key dates cell
-          let datesHtml = '';
-          if (b.dateOpened) datesHtml += `<div>Opened: ${fmtDate(parseDate(b.dateOpened))}</div>`;
-          if (b.deadline) datesHtml += `<div>Deadline: ${fmtDate(parseDate(b.deadline))}</div>`;
-          if (b.dateBonusPosted) datesHtml += `<div>Posted: ${fmtDate(parseDate(b.dateBonusPosted))}</div>`;
-          if (b.dateClosed) datesHtml += `<div>Closed: ${fmtDate(parseDate(b.dateClosed))}</div>`;
-          if (nextEl) datesHtml += `<div>Next eligible: ${fmtDate(nextEl)}${repeatReady ? ' <span class="tag tag-repeat-ready">Ready!</span>' : ''}</div>`;
-          if (readyClose) datesHtml += `<div><span class="tag tag-repeat-ready">Ready to close</span></div>`;
-
-          // Requirements cell
-          let reqHtml = '';
-          if (b.minBalance) reqHtml += `<div>Min bal: ${currency.format(b.minBalance)}${b.minBalanceDays ? ` × ${b.minBalanceDays}d` : ''}</div>`;
-          if (b.ddAmount) reqHtml += `<div>DD: ${currency.format(b.ddAmount)}${b.ddCount ? ` × ${b.ddCount}` : ''}</div>`;
-          if (b.etfAmount) reqHtml += `<div>ETF: ${currency.format(b.etfAmount)}${b.etfDays ? ` (hold ${b.etfDays}d)` : ''}</div>`;
-          if (b.chexSystems) reqHtml += `<div>Pull: ${b.chexSystems}</div>`;
-          if (b.requirements) reqHtml += `<div class="cell-notes" title="${b.requirements}">${b.requirements}</div>`;
-
-          tr.innerHTML = `
-            <td data-label="Bank / account">
-              <div class="cell-bank">${b.bank}${b.accountLast4 ? ` ···${b.accountLast4}` : ''}</div>
-              <div style="font-size:var(--text-xs); color:var(--color-text-muted);">${b.accountName}</div>
-              ${b.sourceUrl ? `<div><a href="${b.sourceUrl}" target="_blank" rel="noopener" style="font-size:var(--text-xs);">Source ↗</a></div>` : ''}
-            </td>
-            <td data-label="Person">${personTag(b.person)}</td>
-            <td data-label="Status">
-              <span class="pill">${statusLabel(b.status)}</span>
-              ${b.referralBonus ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);">+${currency.format(b.referralBonus)} referral</div>` : ''}
-            </td>
-            <td data-label="Bonus">
-              <strong>${currency.format(b.bonusAmount || 0)}</strong>
-              ${b.monthlyFee ? `<div style="font-size:var(--text-xs);color:var(--color-text-muted);">Fee: ${currency.format(b.monthlyFee)}/mo</div>` : ''}
-            </td>
-            <td data-label="Key dates">${datesHtml || '—'}</td>
-            <td data-label="Requirements / notes">${reqHtml || '<span style="color:var(--color-text-muted)">—</span>'}</td>
-            <td data-label="Actions">
-              <button type="button" class="btn-secondary btn-sm" data-edit="${b.id}">Edit</button>
-              <button type="button" class="btn-danger btn-sm" data-delete="${b.id}">Delete</button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-        // Delegate edit/delete
-        tbody.querySelectorAll('[data-edit]').forEach(btn => {
-          btn.addEventListener('click', () => openEdit(btn.dataset.edit));
-        });
-        tbody.querySelectorAll('[data-delete]').forEach(btn => {
-          btn.addEventListener('click', () => deleteBonus(btn.dataset.delete));
-        });
-      }
-
-      function renderReminders() {
-        const remindersList = el('reminders-list');
-        const remindersEmpty = el('reminders-empty');
-        const items = [];
-
-        state.bonuses.forEach(b => {
-          const deadlineDate = parseDate(b.deadline);
-          const remindDeadline = parseInt(b.remindBeforeDeadlineDays) || 7;
-          if (deadlineDate) {
-            const daysToDeadline = daysBetween(today, deadlineDate);
-            if (daysToDeadline !== null && daysToDeadline >= 0 && daysToDeadline <= remindDeadline) {
-              items.push(`⚠️ <strong>${b.bank} – ${b.accountName}</strong>: requirement deadline in ${daysToDeadline} day${daysToDeadline===1?'':'s'} (${fmtDate(deadlineDate)})`);
-            }
-          }
-
-          const nextEl = computeNextEligible(b);
-          const remindRepeat = parseInt(b.remindBeforeRepeatDays) || 30;
-          if (nextEl) {
-            const daysToRepeat = daysBetween(today, nextEl);
-            if (daysToRepeat !== null && daysToRepeat >= 0 && daysToRepeat <= remindRepeat) {
-              items.push(`🔁 <strong>${b.bank} – ${b.accountName}</strong>: eligible to repeat in ${daysToRepeat} day${daysToRepeat===1?'':'s'} (${fmtDate(nextEl)})`);
-            }
-          }
-
-          if (b.dateOpened && b.plannedLifeMonths) {
-            const opened = parseDate(b.dateOpened);
-            if (opened) {
-              const plannedClose = addMonths(opened, parseInt(b.plannedLifeMonths));
-              const remindClose = parseInt(b.remindBeforeCloseDays) || 14;
-              const daysToClose = daysBetween(today, plannedClose);
-              if (daysToClose !== null && daysToClose >= 0 && daysToClose <= remindClose) {
-                items.push(`📅 <strong>${b.bank} – ${b.accountName}</strong>: planned close in ${daysToClose} day${daysToClose===1?'':'s'} (${fmtDate(plannedClose)})`);
-              }
-            }
-          }
-        });
-
-        if (items.length === 0) {
-          remindersEmpty.style.display = '';
-          remindersList.innerHTML = '';
-        } else {
-          remindersEmpty.style.display = 'none';
-          remindersList.innerHTML = items.map(i => `<li style="padding:0.35rem 0; border-bottom:1px solid var(--color-border); font-size:var(--text-sm);">${i}</li>`).join('');
-        }
-      }
-
-      function renderAll() {
-        renderSummary();
-        renderPipeline();
-        renderWeekWidget();
-        renderTable();
-        renderReminders();
-      }
-
-      // ── Form ─────────────────────────────────────────────────────────────────
-
-      const formFields = [
-        'person','bank','accountName','accountLast4','accountHolder','loginLabel',
-        'bonusAmount','referralBonus','status','perHousehold',
-        'dateOpened','offerExpiration','deadline','dateRequirementsMet','dateBonusPosted','dateClosed',
-        'minBalance','minBalanceDays','ddAmount','ddCount','ddMethods','chexSystems','pullDate',
-        'monthlyFee','etfAmount','etfDays',
-        'cooldownPreset','cooldownMonths','repeatAnchor','plannedLifeMonths',
-        'remindBeforeDeadlineDays','remindBeforeRepeatDays','remindBeforeCloseDays',
-        'requirements','feeWaiver','eligibilityNotes','sourceUrl','notes'
-      ];
-
-      function openAdd() {
-        state.editingId = null;
-        formTitleEl.textContent = 'Add bank bonus';
-        saveBtnLabelEl.textContent = 'Add bonus';
-        editingPillEl.style.display = 'none';
-        formErrorEl.style.display = 'none';
-        formEl.reset();
-        el('bonus-id').value = '';
-        formModalEl.style.display = 'flex';
-      }
-
-      function openEdit(id) {
-        const b = state.bonuses.find(x => x.id === id);
-        if (!b) return;
-        state.editingId = id;
-        formTitleEl.textContent = 'Edit bank bonus';
-        saveBtnLabelEl.textContent = 'Save changes';
-        editingPillEl.style.display = '';
-        formErrorEl.style.display = 'none';
-        el('bonus-id').value = id;
-        formFields.forEach(f => {
-          const field = el(f);
-          if (field) field.value = b[f] !== undefined ? b[f] : '';
-        });
-        formModalEl.style.display = 'flex';
-      }
-
-      function closeModal() {
-        formModalEl.style.display = 'none';
-        state.editingId = null;
-      }
-
-      function deleteBonus(id) {
-        if (!confirm('Delete this bonus entry?')) return;
-        state.bonuses = state.bonuses.filter(b => b.id !== id);
-        persistAll();
         renderAll();
+        setDriveStatus(`✓ Loaded from Drive (last saved ${new Date(modifiedTime).toLocaleString()})`);
+      } else {
+        // File doesn't exist yet — create it now with current local data
+        setDriveStatus('📁 No existing file found — creating it now…');
+        await driveSave(); // driveSave will use driveFolderId set above
       }
+    } catch(err) {
+      setDriveStatus('⚠ Drive error: ' + (err.message || err));
+    }
+  }
 
-      formEl.addEventListener('submit', (e) => {
-        e.preventDefault();
-        formErrorEl.style.display = 'none';
+  function setDriveStatus(msg) {
+    el('drive-status').textContent = msg;
+  }
 
-        const bank = el('bank').value.trim();
-        const accountName = el('accountName').value.trim();
-        const bonusAmount = parseFloat(el('bonusAmount').value);
+  function connectDrive() {
+    tokenClient.callback = async (resp) => {
+      if (resp.error) { el('drive-status').textContent = '⚠ Auth error: ' + resp.error; return; }
+      isDriveConnected = true;
+      el('drive-connect-btn').textContent = '✓ Drive Connected';
+      el('drive-connect-btn').disabled = true;
+      el('drive-save-btn').disabled = false;
+      el('open-form-btn').disabled = false;
+      el('drive-status').textContent = '↻ Loading from Drive…';
+      await driveLoad();
+    };
+    gapi.client.getToken() === null ? tokenClient.requestAccessToken({ prompt: 'consent' }) : tokenClient.requestAccessToken({ prompt: '' });
+  }
 
-        if (!bank) { showFormError('Bank is required.'); return; }
-        if (!accountName) { showFormError('Account name is required.'); return; }
-        if (isNaN(bonusAmount) || bonusAmount < 0) { showFormError('Bonus amount must be a valid number.'); return; }
+  function persistAll() {
+    saveLocal();
+    if (isDriveConnected) {
+      clearTimeout(persistAll._timer);
+      persistAll._timer = setTimeout(driveSave, 1500);
+    }
+  }
 
-        const entry = { id: state.editingId || uid() };
-        formFields.forEach(f => {
-          const field = el(f);
-          if (field) entry[f] = field.value;
-        });
-        entry.bonusAmount = bonusAmount;
+  function statusLabel(s) {
+    return { planned:'Planned', in_progress:'In Progress', requirements_met:'Req. Met', bonus_posted:'Bonus Posted', closed:'Closed', closed_repeat:'Closed/Repeat', closing:'Closing', cancelled:'Cancelled' }[s] || s;
+  }
 
-        // Cooldown preset sync
-        if (entry.cooldownPreset !== 'custom' && entry.cooldownPreset !== 'lifetime') {
-          entry.cooldownMonths = entry.cooldownPreset;
-        }
+  function statusPillClass(s) {
+    if (['bonus_posted','requirements_met'].includes(s)) return 'pill-green';
+    if (['in_progress'].includes(s)) return 'pill-blue';
+    if (['closing'].includes(s)) return 'pill-amber';
+    if (['cancelled'].includes(s)) return 'pill-red';
+    return 'pill-default';
+  }
 
-        if (state.editingId) {
-          const idx = state.bonuses.findIndex(b => b.id === state.editingId);
-          if (idx !== -1) state.bonuses[idx] = entry;
-        } else {
-          state.bonuses.push(entry);
-        }
+  function personTag(p) {
+    const L = { you:'You', spouse:'Spouse', joint:'Joint' };
+    const C = { you:'tag-person-you', spouse:'tag-person-spouse', joint:'tag-person-joint' };
+    return `<span class="tag ${C[p]||''}">${L[p]||p||'—'}</span>`;
+  }
 
-        persistAll();
-        renderAll();
-        closeModal();
-      });
+  function renderSummary() {
+    const nonC = state.bonuses.filter(b => b.status !== 'cancelled');
+    const recv = state.bonuses.filter(b => b.dateBonusPosted);
+    const taxY = state.bonuses.filter(b => b.dateBonusPosted && new Date(b.dateBonusPosted).getFullYear() === currentYear);
+    const pend = state.bonuses.filter(b => ['planned','in_progress','requirements_met'].includes(b.status));
+    const sum = arr => arr.reduce((a,b) => a + (parseFloat(b.bonusAmount)||0), 0);
+    el('summary-expected').textContent = currency.format(sum(nonC));
+    el('summary-received').textContent = currency.format(sum(recv));
+    el('summary-tax-year').textContent = currency.format(sum(taxY));
+    el('summary-pending-year').textContent = currency.format(sum(pend));
+    el('summary-tax-year-label').textContent = `${currentYear} calendar year`;
+    ['you','spouse','joint'].forEach(p => {
+      const pb = nonC.filter(b => b.person === p);
+      el(`ps-${p}-expected`).textContent = currency.format(sum(pb));
+      const open = pb.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+      let total = 0, cnt = 0;
+      open.forEach(b => { const d = daysBetween(parseDate(b.dateOpened), today); if (d && d > 0 && b.bonusAmount) { total += parseFloat(b.bonusAmount)/d; cnt++; } });
+      el(`ps-${p}-roi`).textContent = cnt > 0 ? `~${currency.format(total/cnt)}/day avg` : '';
+    });
+    const openAll = nonC.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+    let tr = 0, tc = 0;
+    openAll.forEach(b => { const d = daysBetween(parseDate(b.dateOpened), today); if (d && d > 0 && b.bonusAmount) { tr += parseFloat(b.bonusAmount)/d; tc++; } });
+    el('ps-avg-roi').textContent = tc > 0 ? currency.format(tr) + '/day' : '—';
+    el('ps-avg-roi').style.color = tc > 0 ? 'var(--accent)' : 'var(--text)';
+  }
 
-      function showFormError(msg) {
-        formErrorEl.textContent = msg;
-        formErrorEl.style.display = 'block';
+  function renderPipeline() {
+    ['planned','in_progress','requirements_met','bonus_posted','closing','closed'].forEach(s => {
+      const e = el(`pipe-${s}`);
+      if (e) e.textContent = state.bonuses.filter(b => b.status === s).length;
+    });
+  }
+
+  function renderWeekWidget() {
+    const wOut = new Date(today); wOut.setDate(wOut.getDate() + 7);
+    const items = [];
+    state.bonuses.forEach(b => {
+      if (b.deadline) { const dl = parseDate(b.deadline); if (dl && dl >= today && dl <= wOut) { const d = daysBetween(today, dl); items.push(`🔴 <strong>${b.bank}</strong> deadline in ${d} day${d===1?'':'s'} (${fmtDate(dl)})`); } }
+      if (isReadyToClose(b)) items.push(`✅ <strong>${b.bank}</strong> ready to close — bonus posted, ETF period elapsed`);
+      if (isRepeatReady(b) && ['closed','closed_repeat'].includes(b.status)) items.push(`🔁 <strong>${b.bank}</strong> cooldown elapsed — eligible to repeat`);
+      if (b.dateOpened && b.plannedLifeMonths) {
+        const op = parseDate(b.dateOpened);
+        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); if (pc >= today && pc <= wOut) { const d = daysBetween(today, pc); items.push(`📅 <strong>${b.bank}</strong> planned close in ${d} day${d===1?'':'s'} (${fmtDate(pc)})`); } }
       }
+    });
+    const wl = el('week-list');
+    wl.innerHTML = items.length === 0 ? '<span class="week-empty">Nothing urgent this week. 🎉</span>' : items.map(i => `<div class="week-item">${i}</div>`).join('');
+  }
 
-      el('reset-btn').addEventListener('click', () => { formEl.reset(); el('bonus-id').value = ''; });
-      openFormBtn.addEventListener('click', openAdd);
-      closeFormBtn.addEventListener('click', closeModal);
-      cancelBtn.addEventListener('click', closeModal);
-      formModalEl.addEventListener('click', (e) => { if (e.target === formModalEl) closeModal(); });
+  function filteredBonuses() {
+    const sf = el('filter-status').value;
+    const st = (el('search-text').value || '').toLowerCase();
+    const pf = state.personFilter;
+    return state.bonuses.filter(b => {
+      if (pf !== 'all' && b.person !== pf) return false;
+      if (sf === 'open') { if (['closed','closed_repeat','cancelled'].includes(b.status)) return false; }
+      else if (sf === 'ready_to_close') { if (!isReadyToClose(b)) return false; }
+      else if (sf === 'repeat_ready') { if (!isRepeatReady(b)) return false; }
+      else if (sf !== 'all') { if (b.status !== sf) return false; }
+      if (st) { const h = `${b.bank} ${b.accountName} ${b.accountHolder||''} ${b.notes||''}`.toLowerCase(); if (!h.includes(st)) return false; }
+      return true;
+    });
+  }
 
-      // Person tabs
-      el('person-tabs').querySelectorAll('.person-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-          el('person-tabs').querySelectorAll('.person-tab').forEach(t => t.classList.remove('active'));
-          tab.classList.add('active');
-          state.personFilter = tab.dataset.person;
-          renderTable();
-        });
-      });
+  function renderTable() {
+    const tbody = el('bonus-rows');
+    const empty = el('empty-state');
+    const cnt = el('row-count-tag');
+    const filtered = filteredBonuses();
+    cnt.textContent = `${filtered.length} bonus${filtered.length !== 1 ? 'es' : ''}`;
+    tbody.innerHTML = '';
+    if (filtered.length === 0) { empty.style.display = ''; return; }
+    empty.style.display = 'none';
+    filtered.forEach(b => {
+      const nextEl = computeNextEligible(b);
+      const repeatReady = isRepeatReady(b);
+      const readyClose = isReadyToClose(b);
+      const tr = document.createElement('tr');
+      const urg = urgencyClass(b);
+      if (urg) tr.classList.add(urg);
 
-      // Filters
-      el('filter-status').addEventListener('change', renderTable);
-      el('search-text').addEventListener('input', renderTable);
+      let datesHtml = '';
+      if (b.dateOpened) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">OPENED</span> ${fmtDate(parseDate(b.dateOpened))}</div>`;
+      if (b.deadline) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">DL</span> ${fmtDate(parseDate(b.deadline))}</div>`;
+      if (b.dateBonusPosted) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--accent);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">POSTED</span> ${fmtDate(parseDate(b.dateBonusPosted))}</div>`;
+      if (b.dateClosed) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">CLOSED</span> ${fmtDate(parseDate(b.dateClosed))}</div>`;
+      if (nextEl) datesHtml += `<div style="margin-bottom:2px"><span style="font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:var(--text-muted)">REPEAT</span> ${fmtDate(nextEl)} ${repeatReady ? '<span class="tag tag-repeat-ready">Ready!</span>' : ''}</div>`;
+      if (readyClose) datesHtml += `<div><span class="tag tag-repeat-ready">▸ Ready to close</span></div>`;
 
-      // Drive buttons
-      el('drive-connect-btn').addEventListener('click', connectDrive);
-      el('drive-save-btn').addEventListener('click', driveSave);
+      let reqHtml = '';
+      if (b.minBalance) reqHtml += `<div style="font-size:11px;margin-bottom:1px">Min bal: ${currency.format(b.minBalance)}${b.minBalanceDays?` × ${b.minBalanceDays}d`:''}</div>`;
+      if (b.ddAmount) reqHtml += `<div style="font-size:11px;margin-bottom:1px">DD: ${currency.format(b.ddAmount)}${b.ddCount?` × ${b.ddCount}`:''}</div>`;
+      if (b.etfAmount) reqHtml += `<div style="font-size:11px;margin-bottom:1px">ETF: ${currency.format(b.etfAmount)}${b.etfDays?` (hold ${b.etfDays}d)`:''}</div>`;
+      if (b.chexSystems) reqHtml += `<div style="font-size:11px;margin-bottom:1px">Pull: ${b.chexSystems}</div>`;
+      if (b.requirements) reqHtml += `<div class="cell-notes" title="${b.requirements}">${b.requirements}</div>`;
 
-      // ── Boot ─────────────────────────────────────────────────────────────────
+      tr.innerHTML = `
+        <td data-label="Bank / Account">
+          <div class="cell-bank">${b.bank}${b.accountLast4?` <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">···${b.accountLast4}</span>`:''}</div>
+          <div class="cell-sub">${b.accountName}</div>
+          ${b.sourceUrl ? `<div style="margin-top:3px"><a href="${b.sourceUrl}" target="_blank" rel="noopener" class="cell-link">Source ↗</a></div>` : ''}
+        </td>
+        <td data-label="Person">${personTag(b.person)}</td>
+        <td data-label="Status">
+          <span class="pill ${statusPillClass(b.status)}">${statusLabel(b.status)}</span>
+          ${b.referralBonus ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px">+${currency.format(b.referralBonus)} ref.</div>` : ''}
+        </td>
+        <td data-label="Bonus">
+          <span style="font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--accent)">${currency.format(b.bonusAmount||0)}</span>
+          ${b.monthlyFee ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Fee: ${currency.format(b.monthlyFee)}/mo</div>` : ''}
+        </td>
+        <td data-label="Key Dates" style="font-size:12px">${datesHtml||'—'}</td>
+        <td data-label="Requirements">${reqHtml||'<span style="color:var(--text-dim)">—</span>'}</td>
+        <td data-label="Actions">
+          <div style="display:flex;gap:4px">
+            <button type="button" class="btn-secondary btn-sm" data-edit="${b.id}">Edit</button>
+            <button type="button" class="btn-danger btn-sm" data-delete="${b.id}">Del</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
 
-      loadLocal();
-      driveFileId = localStorage.getItem(DRIVE_FILE_ID_KEY) || null;
-      renderAll();
+    tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openEdit(btn.dataset.edit)));
+    tbody.querySelectorAll('[data-delete]').forEach(btn => btn.addEventListener('click', () => deleteBonus(btn.dataset.delete)));
+  }
 
-      // Allow adding if data already exists locally (Drive connect will unlock full edit)
-      if (state.bonuses.length > 0) {
-        openFormBtn.disabled = false;
+  function renderReminders() {
+    const list = el('reminders-list');
+    const empty = el('reminders-empty');
+    const items = [];
+    state.bonuses.forEach(b => {
+      const dd = parseDate(b.deadline);
+      const rd = parseInt(b.remindBeforeDeadlineDays) || 7;
+      if (dd) { const d = daysBetween(today, dd); if (d !== null && d >= 0 && d <= rd) items.push(`⚠️ <strong>${b.bank} – ${b.accountName}</strong>: requirement deadline in ${d} day${d===1?'':'s'} (${fmtDate(dd)})`); }
+      const nextEl = computeNextEligible(b);
+      const rr = parseInt(b.remindBeforeRepeatDays) || 30;
+      if (nextEl) { const d = daysBetween(today, nextEl); if (d !== null && d >= 0 && d <= rr) items.push(`🔁 <strong>${b.bank} – ${b.accountName}</strong>: eligible to repeat in ${d} day${d===1?'':'s'} (${fmtDate(nextEl)})`); }
+      if (b.dateOpened && b.plannedLifeMonths) {
+        const op = parseDate(b.dateOpened);
+        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); const rc = parseInt(b.remindBeforeCloseDays)||14; const d = daysBetween(today, pc); if (d !== null && d >= 0 && d <= rc) items.push(`📅 <strong>${b.bank} – ${b.accountName}</strong>: planned close in ${d} day${d===1?'':'s'} (${fmtDate(pc)})`); }
       }
+    });
+    if (items.length === 0) { empty.style.display = ''; list.innerHTML = ''; }
+    else { empty.style.display = 'none'; list.innerHTML = items.map(i => `<li>${i}</li>`).join(''); }
+  }
 
-      // Re-render on Drive connect if already authed
-      window.addEventListener('DOMContentLoaded', () => {
-        maybeEnableDriveButtons();
-      });
+  function renderAll() { renderSummary(); renderPipeline(); renderWeekWidget(); renderTable(); renderReminders(); }
 
-    })();
-  </script>
+  const formFields = [
+    'person','bank','accountName','accountLast4','accountHolder','loginLabel',
+    'bonusAmount','referralBonus','status','perHousehold',
+    'dateOpened','offerExpiration','deadline','dateRequirementsMet','dateBonusPosted','dateClosed',
+    'minBalance','minBalanceDays','ddAmount','ddCount','ddMethods','chexSystems','pullDate',
+    'monthlyFee','etfAmount','etfDays',
+    'cooldownPreset','cooldownMonths','repeatAnchor','plannedLifeMonths',
+    'remindBeforeDeadlineDays','remindBeforeRepeatDays','remindBeforeCloseDays',
+    'requirements','feeWaiver','eligibilityNotes','sourceUrl','notes'
+  ];
+
+  function openAdd() {
+    state.editingId = null;
+    formTitleEl.textContent = 'Add Bank Bonus';
+    saveBtnLabelEl.textContent = 'Add Bonus';
+    editingPillEl.style.display = 'none';
+    formErrorEl.style.display = 'none';
+    formEl.reset();
+    el('bonus-id').value = '';
+    formModalEl.style.display = 'flex';
+  }
+
+  function openEdit(id) {
+    const b = state.bonuses.find(x => x.id === id);
+    if (!b) return;
+    state.editingId = id;
+    formTitleEl.textContent = 'Edit Bank Bonus';
+    saveBtnLabelEl.textContent = 'Save Changes';
+    editingPillEl.style.display = '';
+    formErrorEl.style.display = 'none';
+    el('bonus-id').value = id;
+    formFields.forEach(f => { const field = el(f); if (field) field.value = b[f] !== undefined ? b[f] : ''; });
+    formModalEl.style.display = 'flex';
+  }
+
+  function closeModal() { formModalEl.style.display = 'none'; state.editingId = null; }
+
+  function deleteBonus(id) {
+    if (!confirm('Delete this bonus entry?')) return;
+    state.bonuses = state.bonuses.filter(b => b.id !== id);
+    persistAll(); renderAll();
+  }
+
+  formEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    formErrorEl.style.display = 'none';
+    const bank = el('bank').value.trim();
+    const accountName = el('accountName').value.trim();
+    const bonusAmount = parseFloat(el('bonusAmount').value);
+    if (!bank) { showFormError('Bank is required.'); return; }
+    if (!accountName) { showFormError('Account name is required.'); return; }
+    if (isNaN(bonusAmount) || bonusAmount < 0) { showFormError('Bonus amount must be a valid number.'); return; }
+    const entry = { id: state.editingId || uid() };
+    formFields.forEach(f => { const field = el(f); if (field) entry[f] = field.value; });
+    entry.bonusAmount = bonusAmount;
+    if (entry.cooldownPreset !== 'custom' && entry.cooldownPreset !== 'lifetime') entry.cooldownMonths = entry.cooldownPreset;
+    if (state.editingId) { const idx = state.bonuses.findIndex(b => b.id === state.editingId); if (idx !== -1) state.bonuses[idx] = entry; }
+    else state.bonuses.push(entry);
+    persistAll(); renderAll(); closeModal();
+  });
+
+  function showFormError(msg) { formErrorEl.textContent = msg; formErrorEl.style.display = 'block'; }
+
+  el('reset-btn').addEventListener('click', () => { formEl.reset(); el('bonus-id').value = ''; });
+  openFormBtn.addEventListener('click', openAdd);
+  closeFormBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+  formModalEl.addEventListener('click', (e) => { if (e.target === formModalEl) closeModal(); });
+
+  el('person-tabs').querySelectorAll('.person-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      el('person-tabs').querySelectorAll('.person-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.personFilter = tab.dataset.person;
+      renderTable();
+    });
+  });
+
+  el('filter-status').addEventListener('change', renderTable);
+  el('search-text').addEventListener('input', renderTable);
+  el('drive-connect-btn').addEventListener('click', connectDrive);
+  el('drive-save-btn').addEventListener('click', driveSave);
+
+  loadLocal();
+  // Restore cached Drive IDs so returning users skip re-discovery
+  driveFileId   = localStorage.getItem(DRIVE_FILE_ID_KEY)   || null;
+  driveFolderId = localStorage.getItem(DRIVE_FOLDER_ID_KEY) || null;
+  renderAll();
+
+  if (state.bonuses.length > 0) openFormBtn.disabled = false;
+
+  window.addEventListener('DOMContentLoaded', () => { maybeEnableDriveButtons(); });
+})();
+</script>
 </body>
 </html>

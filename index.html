@@ -16,9 +16,8 @@
     const DRIVE_FOLDER_NAME = 'Bank-Bonus-App-Data';
     const DRIVE_FILE_NAME   = 'bank-bonus-tracker.json';
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    // Using drive scope so the app can find pre-existing folders/files by name.
-    // Tip: for production you can narrow to drive.file if you always start fresh.
-    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive';
+    // drive.file: only accesses files this app creates — no broad Drive access needed.
+    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
     let gapiInited = false, gisInited = false, tokenClient = null;
 
@@ -50,6 +49,58 @@
       }
       maybeEnableDriveButtons();
     }
+
+    // ── Boot timeout: if APIs not ready in 6s, show actionable diagnosis ─────
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        if (gapiInited && gisInited) return; // all good
+
+        var origin = window.location.origin;
+        var proto  = window.location.protocol;
+        var isFile = (proto === 'file:');
+
+        var statusEl = document.getElementById('drive-status');
+        var diagNote = document.getElementById('diag-note');
+        var diagGapi = document.getElementById('diag-gapi');
+        var diagGis  = document.getElementById('diag-gis');
+        var diagOrig = document.getElementById('diag-origin');
+        var diagOval = document.getElementById('diag-origin-val');
+
+        if (diagGapi) diagGapi.textContent = gapiInited ? '✅' : '❌';
+        if (diagGis)  diagGis.textContent  = gisInited  ? '✅' : '❌';
+        if (diagOval) diagOval.textContent = origin;
+
+        var msg = '';
+        if (isFile) {
+          if (diagOrig) diagOrig.textContent = '❌';
+          msg = '<strong>Opening as file:// — Google OAuth is blocked by browsers.</strong><br>' +
+                'Serve from a local server: <code>python3 -m http.server 8080</code><br>' +
+                'Then open <a href="http://localhost:8080" style="color:var(--accent)">http://localhost:8080</a> ' +
+                'and add it to Google Cloud Console authorized origins.';
+        } else {
+          if (diagOrig) diagOrig.textContent = '⚠';
+          msg = '<strong>Google APIs timed out loading from origin: ' + origin + '</strong><br><br>' +
+                'Most likely cause: <strong>' + origin + '</strong> is not in your Google Cloud Console ' +
+                'authorized JavaScript origins.<br><br>' +
+                'Fix steps:<br>' +
+                '1. Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--accent)">console.cloud.google.com → APIs & Services → Credentials</a><br>' +
+                '2. Click your OAuth 2.0 Client ID<br>' +
+                '3. Under <strong>Authorized JavaScript origins</strong> add:<br>' +
+                '<code style="background:var(--surface);padding:2px 8px;border-radius:3px;display:inline-block;margin:4px 0;">' + origin + '</code><br>' +
+                '4. Under <strong>Authorized redirect URIs</strong> add:<br>' +
+                '<code style="background:var(--surface);padding:2px 8px;border-radius:3px;display:inline-block;margin:4px 0;">' + origin + '/</code><br>' +
+                '5. Save and wait ~5 minutes for changes to propagate, then reload this page.<br><br>' +
+                'Also check: your OAuth app may be in <strong>Testing</strong> mode — add your Google account as a test user, ' +
+                'or publish the app in Google Cloud Console → OAuth consent screen.';
+        }
+
+        if (diagNote && msg) {
+          diagNote.style.display = '';
+          diagNote.innerHTML = msg;
+        }
+        if (statusEl) statusEl.textContent = '❌ Google APIs failed to initialize — see below';
+      }, 6000);
+    });
     function updateDiagnostics() {
       const dGapi   = document.getElementById('diag-gapi');
       const dGis    = document.getElementById('diag-gis');
@@ -98,201 +149,49 @@
     }
 
     // ── Drive helpers ────────────────────────────────────────────────────────
-    //
-    // ROOT CAUSE OF DUPLICATE FOLDERS:
-    // The old code searched for the folder by NAME each session. If two devices
-    // authenticated with different OAuth tokens before the first folder was
-    // visible cross-session, each one saw "not found" and created its own copy.
-    //
-    // THE FIX — single source of truth via a pointer file:
-    // We store a tiny file called "bank-bonus-tracker.pointer" in the user's
-    // Drive ROOT (not in any folder). It contains just the canonical folder ID.
-    // Every device reads this pointer first. If the pointer exists, all devices
-    // use the same folder ID — impossible to duplicate. If it doesn't exist,
-    // only then do we create the folder AND write the pointer atomically.
-    //
-    // This also handles your existing duplicate: on next connect the app will
-    // detect both folders, pick the one with the most recent data file, move
-    // the file to a single canonical folder, trash the duplicate, and rewrite
-    // the pointer. Zero data loss.
+    // Uses drive.file scope — the app can only see files/folders it creates.
+    // On first connect: searches for the folder by name, creates if missing.
+    // Folder ID is cached in localStorage so subsequent sessions go direct
+    // without needing a search (drive.file can always access by ID).
 
-    const POINTER_FILE_NAME = 'bank-bonus-tracker.pointer';
-
-    // Upload a small text file to Drive root (no parent = root).
-    async function uploadTextToDriveRoot(existingFileId, name, text) {
-      const token = gapi.auth.getToken().access_token;
-      const boundary = 'ptr_boundary_' + Date.now();
-      const meta = existingFileId ? { name } : { name }; // no parents = root
-      const body = [
-        '--' + boundary, 'Content-Type: application/json', '',
-        JSON.stringify(meta),
-        '--' + boundary, 'Content-Type: text/plain', '',
-        text,
-        '--' + boundary + '--',
-      ].join('\r\n');
-      const url = existingFileId
-        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
-        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-      const res = await fetch(url, {
-        method: existingFileId ? 'PATCH' : 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
-        body,
-      });
-      if (!res.ok) throw new Error('Pointer upload failed: HTTP ' + res.status);
-      return (await res.json()).id;
-    }
-
-    // Find the pointer file in Drive root. Returns { id, folderId } or null.
-    async function readPointerFile() {
+    async function getOrCreateFolder() {
+      // With drive.file scope, list() only returns files THIS app created.
+      // So if the folder was created by this app in a prior session it will appear.
       const res = await gapi.client.drive.files.list({
-        q: `name='${POINTER_FILE_NAME}' and trashed=false and 'root' in parents`,
+        q: "mimeType='application/vnd.google-apps.folder' and name='" + DRIVE_FOLDER_NAME + "' and trashed=false",
         fields: 'files(id, name)',
         spaces: 'drive',
-        pageSize: 5,
+        pageSize: 10,
       });
-      const files = res.result.files;
-      if (!files || files.length === 0) return null;
-      // Read the content
-      const cr = await gapi.client.drive.files.get({ fileId: files[0].id, alt: 'media' });
-      const text = (typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result)).trim();
-      if (!text) return null;
-      try {
-        const obj = JSON.parse(text);
-        return { pointerId: files[0].id, folderId: obj.folderId };
-      } catch(e) {
-        return null;
+      const folders = res.result.files;
+      if (folders && folders.length > 0) {
+        console.log('[Drive] Found folder:', folders[0].id);
+        return folders[0].id;
       }
-    }
-
-    // Write / update the pointer file with the canonical folder ID.
-    async function writePointerFile(pointerId, folderId) {
-      const text = JSON.stringify({ folderId, app: 'bank-bonus-tracker', written: new Date().toISOString() });
-      return await uploadTextToDriveRoot(pointerId, POINTER_FILE_NAME, text);
-    }
-
-    // Find all folders with DRIVE_FOLDER_NAME in Drive (could be duplicates).
-    async function findAllFolders() {
-      const res = await gapi.client.drive.files.list({
-        q: `mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER_NAME}' and trashed=false`,
-        fields: 'files(id, name, createdTime)',
-        spaces: 'drive',
-        pageSize: 20,
+      // Not found — create it
+      console.log('[Drive] Creating folder:', DRIVE_FOLDER_NAME);
+      const created = await gapi.client.drive.files.create({
+        resource: { name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
+        fields: 'id',
       });
-      return res.result.files || [];
+      return created.result.id;
     }
 
-    // Find the data file inside a specific folder.
     async function findFileInFolder(folderId) {
       const res = await gapi.client.drive.files.list({
-        q: `name='${DRIVE_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
+        q: "name='" + DRIVE_FILE_NAME + "' and '" + folderId + "' in parents and trashed=false",
         fields: 'files(id, name, modifiedTime)',
         spaces: 'drive',
         pageSize: 5,
       });
       const files = res.result.files;
       if (files && files.length > 0) {
+        console.log('[Drive] Found file:', files[0].id, 'modified:', files[0].modifiedTime);
         return { id: files[0].id, modifiedTime: files[0].modifiedTime, exists: true };
       }
       return { id: null, modifiedTime: null, exists: false };
     }
 
-    // THE MAIN RESOLVER: returns { folderId, pointerId } — always canonical.
-    // Handles first-time setup, returning users, AND the duplicate-folder cleanup.
-    async function resolveCanonicalFolder() {
-      // Step 1: Check for the pointer file (single source of truth)
-      setDriveStatus('↻ Checking Drive for existing data…');
-      const pointer = await readPointerFile();
-
-      if (pointer) {
-        // Pointer exists — verify the folder it points to still exists
-        console.log('[Drive] Pointer found → folder', pointer.folderId);
-        try {
-          await gapi.client.drive.files.get({ fileId: pointer.folderId, fields: 'id' });
-          // Folder confirmed — use it
-          return { folderId: pointer.folderId, pointerId: pointer.pointerId };
-        } catch(e) {
-          // Pointer points to a deleted folder — fall through to re-resolve
-          console.warn('[Drive] Pointer folder is gone, re-resolving…');
-        }
-      }
-
-      // Step 2: No valid pointer — search for folders by name
-      setDriveStatus('↻ Scanning for your data folder…');
-      const folders = await findAllFolders();
-
-      let canonicalFolderId;
-      let pointerId = pointer ? pointer.pointerId : null;
-
-      if (folders.length === 0) {
-        // Fresh install — create folder
-        setDriveStatus('↻ Creating data folder…');
-        const created = await gapi.client.drive.files.create({
-          resource: { name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
-          fields: 'id',
-        });
-        canonicalFolderId = created.result.id;
-        console.log('[Drive] Created fresh folder:', canonicalFolderId);
-
-      } else if (folders.length === 1) {
-        // Exactly one folder — use it
-        canonicalFolderId = folders[0].id;
-        console.log('[Drive] Single folder found:', canonicalFolderId);
-
-      } else {
-        // DUPLICATE FOLDERS DETECTED — merge them
-        setDriveStatus('⚠ Found ' + folders.length + ' duplicate folders — merging…');
-        console.warn('[Drive] Duplicate folders:', folders.map(f => f.id));
-
-        // Pick the folder whose data file has the most recent modifiedTime
-        let bestFolderId = folders[0].id;
-        let bestTime = null;
-
-        for (const folder of folders) {
-          const { id, modifiedTime, exists } = await findFileInFolder(folder.id);
-          if (exists) {
-            const t = new Date(modifiedTime);
-            if (!bestTime || t > bestTime) {
-              bestTime = t;
-              bestFolderId = folder.id;
-            }
-          }
-        }
-
-        canonicalFolderId = bestFolderId;
-        console.log('[Drive] Canonical folder (most recent data):', canonicalFolderId);
-
-        // Move data files from other folders into canonical folder, then trash duplicates
-        for (const folder of folders) {
-          if (folder.id === canonicalFolderId) continue;
-          try {
-            const { id: fileId, exists } = await findFileInFolder(folder.id);
-            if (exists) {
-              // Move file to canonical folder (add parent, remove old parent)
-              await gapi.client.drive.files.update({
-                fileId,
-                addParents: canonicalFolderId,
-                removeParents: folder.id,
-                fields: 'id',
-              });
-              console.log('[Drive] Moved file', fileId, 'to canonical folder');
-            }
-            // Trash the now-empty duplicate folder
-            await gapi.client.drive.files.update({ fileId: folder.id, resource: { trashed: true } });
-            console.log('[Drive] Trashed duplicate folder:', folder.id);
-          } catch(e) {
-            console.warn('[Drive] Could not clean up folder', folder.id, e);
-          }
-        }
-
-        setDriveStatus('✓ Merged duplicate folders into one');
-      }
-
-      // Step 3: Write / update the pointer so all future sessions go direct
-      pointerId = await writePointerFile(pointerId, canonicalFolderId);
-      console.log('[Drive] Pointer written:', pointerId, '→', canonicalFolderId);
-
-      return { folderId: canonicalFolderId, pointerId };
-    }
   </script>
   <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
   <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
@@ -1573,10 +1472,8 @@
   const STORAGE_KEY          = 'bankBonusData_v2';
   const DRIVE_FILE_ID_KEY    = 'bankBonusDriveFileId_v1';
   const DRIVE_FOLDER_ID_KEY  = 'bankBonusDriveFolderId_v1';
-  const DRIVE_POINTER_ID_KEY = 'bankBonusDrivePointerId_v1';
   let driveFileId    = null;
   let driveFolderId  = null;
-  let drivePointerId = null;
   let isDriveConnected = false;
   let closedSectionOpen = false;
   let rechurnOpen = false;
@@ -1648,7 +1545,7 @@
   function deserializeData(raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p; if (p && Array.isArray(p.bonuses)) return p.bonuses; return []; }
 
   // ── Drive ──────────────────────────────────────────────────────────────
-  // Upload or patch the JSON data file inside the canonical folder.
+  // Upload or patch the JSON data file inside the folder.
   async function uploadDataFile(fileId, folderId, content) {
     const token = gapi.auth.getToken().access_token;
     const meta  = fileId ? { name: DRIVE_FILE_NAME } : { name: DRIVE_FILE_NAME, parents: [folderId] };
@@ -1675,13 +1572,9 @@
     const content = serializeData();
     try {
       setDriveStatus('↻ Saving…');
-      // Ensure we have a canonical folder (resolves duplicates if needed)
       if (!driveFolderId) {
-        const resolved = await resolveCanonicalFolder();
-        driveFolderId  = resolved.folderId;
-        drivePointerId = resolved.pointerId;
-        localStorage.setItem(DRIVE_FOLDER_ID_KEY,  driveFolderId);
-        localStorage.setItem(DRIVE_POINTER_ID_KEY, drivePointerId);
+        driveFolderId = await getOrCreateFolder();
+        localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
       }
       const result = await uploadDataFile(driveFileId, driveFolderId, content);
       if (!driveFileId) {
@@ -1689,17 +1582,16 @@
         localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
       }
       setDriveStatus('✓ Saved — ' + new Date().toLocaleTimeString());
-    } catch(err) { setDriveStatus('⚠ Save failed: ' + (err.message || err)); }
+    } catch(err) {
+      setDriveStatus('⚠ Save failed: ' + (err.message || err));
+    }
   }
 
   async function driveLoad() {
     try {
-      // THE FIX: resolve the single canonical folder (handles duplicates automatically)
-      const resolved = await resolveCanonicalFolder();
-      driveFolderId  = resolved.folderId;
-      drivePointerId = resolved.pointerId;
-      localStorage.setItem(DRIVE_FOLDER_ID_KEY,  driveFolderId);
-      localStorage.setItem(DRIVE_POINTER_ID_KEY, drivePointerId);
+      setDriveStatus('↻ Finding your folder…');
+      driveFolderId = await getOrCreateFolder();
+      localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
 
       setDriveStatus('↻ Loading data file…');
       const { id, modifiedTime, exists } = await findFileInFolder(driveFolderId);
@@ -1714,27 +1606,26 @@
         const driveCount = driveData.length;
 
         if (localCount > 0 && driveCount > 0 && localCount !== driveCount) {
-          // Both local and Drive have data and they differ — smart merge by ID
-          // Keep all unique entries from both sides (union by id)
-          const merged = [...driveData];
+          // Smart merge: union by ID — keeps entries from both sides
+          const merged  = [...driveData];
           const driveIds = new Set(driveData.map(b => b.id));
           state.bonuses.forEach(b => { if (!driveIds.has(b.id)) merged.push(b); });
           state.bonuses = merged;
-          setDriveStatus('✓ Merged local + Drive data (' + merged.length + ' total) — ' + new Date(modifiedTime).toLocaleString());
+          setDriveStatus('✓ Merged local + Drive (' + merged.length + ' total) — ' + new Date(modifiedTime).toLocaleString());
         } else {
           state.bonuses = driveData;
           setDriveStatus('✓ Loaded from Drive — ' + new Date(modifiedTime).toLocaleString());
         }
         saveLocal();
         renderAll();
-        // Push merged data back to Drive immediately so both sides are in sync
-        await driveSave();
+        await driveSave(); // push merged data back immediately
       } else {
-        // No data file yet — push local data up
         setDriveStatus('📁 No data file found — saving local data to Drive…');
         await driveSave();
       }
-    } catch(err) { setDriveStatus('⚠ Drive error: ' + (err.message || err)); }
+    } catch(err) {
+      setDriveStatus('⚠ Drive error: ' + (err.message || err));
+    }
   }
 
   function setDriveStatus(msg) { el('drive-status').textContent = msg; }
@@ -2576,7 +2467,6 @@
   loadLocal();
   driveFileId    = localStorage.getItem(DRIVE_FILE_ID_KEY)    || null;
   driveFolderId  = localStorage.getItem(DRIVE_FOLDER_ID_KEY)  || null;
-  drivePointerId = localStorage.getItem(DRIVE_POINTER_ID_KEY) || null;
   renderAll();
   if (state.bonuses.length > 0) openFormBtn.disabled = false;
   // maybeEnableDriveButtons is called by gapiLoaded/gisLoaded when APIs are ready.

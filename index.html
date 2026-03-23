@@ -16,8 +16,13 @@
     const DRIVE_FOLDER_NAME = 'Bank-Bonus-App-Data';
     const DRIVE_FILE_NAME   = 'bank-bonus-tracker.json';
     const GOOGLE_DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest';
-    // drive.file: only accesses files this app creates — no broad Drive access needed.
-    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+    // Two scopes combined:
+    // - drive.metadata.readonly: lets us SEARCH for the existing folder/file by name
+    //   (works across all sessions/devices, finds pre-existing files)
+    // - drive.file: lets us CREATE and WRITE files (only files this app touches)
+    // Together they solve the "can't find old files" problem without needing
+    // full drive access (which requires Google app verification).
+    const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.file';
 
     let gapiInited = false, gisInited = false, tokenClient = null;
 
@@ -155,8 +160,7 @@
     // without needing a search (drive.file can always access by ID).
 
     async function getOrCreateFolder() {
-      // With drive.file scope, list() only returns files THIS app created.
-      // So if the folder was created by this app in a prior session it will appear.
+      // metadata.readonly scope lets us search any folder by name (finds pre-existing ones)
       const res = await gapi.client.drive.files.list({
         q: "mimeType='application/vnd.google-apps.folder' and name='" + DRIVE_FOLDER_NAME + "' and trashed=false",
         fields: 'files(id, name)',
@@ -165,11 +169,11 @@
       });
       const folders = res.result.files;
       if (folders && folders.length > 0) {
-        console.log('[Drive] Found folder:', folders[0].id);
+        console.log('[Drive] Found existing folder:', folders[0].id);
         return folders[0].id;
       }
-      // Not found — create it
-      console.log('[Drive] Creating folder:', DRIVE_FOLDER_NAME);
+      // Not found — create it (drive.file scope allows this)
+      console.log('[Drive] Creating new folder:', DRIVE_FOLDER_NAME);
       const created = await gapi.client.drive.files.create({
         resource: { name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
         fields: 'id',

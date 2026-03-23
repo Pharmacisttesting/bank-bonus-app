@@ -43,65 +43,202 @@
       if (btn && gapiInited && gisInited) btn.disabled = false;
     }
 
-    // ── Drive helpers: find-or-create folder & file ──────────────────────────
+    // ── Drive helpers ────────────────────────────────────────────────────────
+    //
+    // ROOT CAUSE OF DUPLICATE FOLDERS:
+    // The old code searched for the folder by NAME each session. If two devices
+    // authenticated with different OAuth tokens before the first folder was
+    // visible cross-session, each one saw "not found" and created its own copy.
+    //
+    // THE FIX — single source of truth via a pointer file:
+    // We store a tiny file called "bank-bonus-tracker.pointer" in the user's
+    // Drive ROOT (not in any folder). It contains just the canonical folder ID.
+    // Every device reads this pointer first. If the pointer exists, all devices
+    // use the same folder ID — impossible to duplicate. If it doesn't exist,
+    // only then do we create the folder AND write the pointer atomically.
+    //
+    // This also handles your existing duplicate: on next connect the app will
+    // detect both folders, pick the one with the most recent data file, move
+    // the file to a single canonical folder, trash the duplicate, and rewrite
+    // the pointer. Zero data loss.
 
-    // Looks for 'Bank-Bonus-App-Data' folder in the user's My Drive.
-    // If found, returns its ID. If not found, creates it and returns the new ID.
-    // This way your existing folder is never duplicated.
-    async function getOrCreateFolder() {
-      const res = await gapi.client.drive.files.list({
-        // Exact name match, folders only, not trashed, in My Drive
-        q: `mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER_NAME}' and trashed=false`,
-        fields: 'files(id, name)',
-        spaces: 'drive',
-        // pageSize 10 is plenty — we just need the first hit
-        pageSize: 10,
+    const POINTER_FILE_NAME = 'bank-bonus-tracker.pointer';
+
+    // Upload a small text file to Drive root (no parent = root).
+    async function uploadTextToDriveRoot(existingFileId, name, text) {
+      const token = gapi.auth.getToken().access_token;
+      const boundary = 'ptr_boundary_' + Date.now();
+      const meta = existingFileId ? { name } : { name }; // no parents = root
+      const body = [
+        '--' + boundary, 'Content-Type: application/json', '',
+        JSON.stringify(meta),
+        '--' + boundary, 'Content-Type: text/plain', '',
+        text,
+        '--' + boundary + '--',
+      ].join('
+');
+      const url = existingFileId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+      const res = await fetch(url, {
+        method: existingFileId ? 'PATCH' : 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
+        body,
       });
-
-      const folders = res.result.files;
-
-      if (folders && folders.length > 0) {
-        // ✅ Found existing folder — use it, never create a duplicate
-        console.log(`[Drive] Found existing folder "${DRIVE_FOLDER_NAME}" (id: ${folders[0].id})`);
-        return folders[0].id;
-      }
-
-      // 📁 Folder doesn't exist yet — create it in My Drive root
-      console.log(`[Drive] Folder "${DRIVE_FOLDER_NAME}" not found — creating it now`);
-      const created = await gapi.client.drive.files.create({
-        resource: {
-          name: DRIVE_FOLDER_NAME,
-          mimeType: 'application/vnd.google-apps.folder',
-          // No 'parents' = lands in My Drive root, same place as your existing one
-        },
-        fields: 'id',
-      });
-      console.log(`[Drive] Created folder (id: ${created.result.id})`);
-      return created.result.id;
+      if (!res.ok) throw new Error('Pointer upload failed: HTTP ' + res.status);
+      return (await res.json()).id;
     }
 
-    // Looks for 'bank-bonus-tracker.json' inside the given folder.
-    // Returns { id, modifiedTime, exists } — never creates the file here.
-    // Caller (driveLoad) decides whether to load existing data or write fresh.
+    // Find the pointer file in Drive root. Returns { id, folderId } or null.
+    async function readPointerFile() {
+      const res = await gapi.client.drive.files.list({
+        q: `name='${POINTER_FILE_NAME}' and trashed=false and 'root' in parents`,
+        fields: 'files(id, name)',
+        spaces: 'drive',
+        pageSize: 5,
+      });
+      const files = res.result.files;
+      if (!files || files.length === 0) return null;
+      // Read the content
+      const cr = await gapi.client.drive.files.get({ fileId: files[0].id, alt: 'media' });
+      const text = (typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result)).trim();
+      if (!text) return null;
+      try {
+        const obj = JSON.parse(text);
+        return { pointerId: files[0].id, folderId: obj.folderId };
+      } catch(e) {
+        return null;
+      }
+    }
+
+    // Write / update the pointer file with the canonical folder ID.
+    async function writePointerFile(pointerId, folderId) {
+      const text = JSON.stringify({ folderId, app: 'bank-bonus-tracker', written: new Date().toISOString() });
+      return await uploadTextToDriveRoot(pointerId, POINTER_FILE_NAME, text);
+    }
+
+    // Find all folders with DRIVE_FOLDER_NAME in Drive (could be duplicates).
+    async function findAllFolders() {
+      const res = await gapi.client.drive.files.list({
+        q: `mimeType='application/vnd.google-apps.folder' and name='${DRIVE_FOLDER_NAME}' and trashed=false`,
+        fields: 'files(id, name, createdTime)',
+        spaces: 'drive',
+        pageSize: 20,
+      });
+      return res.result.files || [];
+    }
+
+    // Find the data file inside a specific folder.
     async function findFileInFolder(folderId) {
       const res = await gapi.client.drive.files.list({
-        // Exact name + must be a direct child of this folder + not trashed
         q: `name='${DRIVE_FILE_NAME}' and '${folderId}' in parents and trashed=false`,
         fields: 'files(id, name, modifiedTime)',
         spaces: 'drive',
-        pageSize: 10,
+        pageSize: 5,
       });
-
       const files = res.result.files;
-
       if (files && files.length > 0) {
-        // ✅ Found existing file — return its id so we load it, not overwrite it
-        console.log(`[Drive] Found existing file "${DRIVE_FILE_NAME}" (id: ${files[0].id}, modified: ${files[0].modifiedTime})`);
         return { id: files[0].id, modifiedTime: files[0].modifiedTime, exists: true };
       }
-
-      console.log(`[Drive] File "${DRIVE_FILE_NAME}" not found in folder ${folderId}`);
       return { id: null, modifiedTime: null, exists: false };
+    }
+
+    // THE MAIN RESOLVER: returns { folderId, pointerId } — always canonical.
+    // Handles first-time setup, returning users, AND the duplicate-folder cleanup.
+    async function resolveCanonicalFolder() {
+      // Step 1: Check for the pointer file (single source of truth)
+      setDriveStatus('↻ Checking Drive for existing data…');
+      const pointer = await readPointerFile();
+
+      if (pointer) {
+        // Pointer exists — verify the folder it points to still exists
+        console.log('[Drive] Pointer found → folder', pointer.folderId);
+        try {
+          await gapi.client.drive.files.get({ fileId: pointer.folderId, fields: 'id' });
+          // Folder confirmed — use it
+          return { folderId: pointer.folderId, pointerId: pointer.pointerId };
+        } catch(e) {
+          // Pointer points to a deleted folder — fall through to re-resolve
+          console.warn('[Drive] Pointer folder is gone, re-resolving…');
+        }
+      }
+
+      // Step 2: No valid pointer — search for folders by name
+      setDriveStatus('↻ Scanning for your data folder…');
+      const folders = await findAllFolders();
+
+      let canonicalFolderId;
+      let pointerId = pointer ? pointer.pointerId : null;
+
+      if (folders.length === 0) {
+        // Fresh install — create folder
+        setDriveStatus('↻ Creating data folder…');
+        const created = await gapi.client.drive.files.create({
+          resource: { name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
+          fields: 'id',
+        });
+        canonicalFolderId = created.result.id;
+        console.log('[Drive] Created fresh folder:', canonicalFolderId);
+
+      } else if (folders.length === 1) {
+        // Exactly one folder — use it
+        canonicalFolderId = folders[0].id;
+        console.log('[Drive] Single folder found:', canonicalFolderId);
+
+      } else {
+        // DUPLICATE FOLDERS DETECTED — merge them
+        setDriveStatus('⚠ Found ' + folders.length + ' duplicate folders — merging…');
+        console.warn('[Drive] Duplicate folders:', folders.map(f => f.id));
+
+        // Pick the folder whose data file has the most recent modifiedTime
+        let bestFolderId = folders[0].id;
+        let bestTime = null;
+
+        for (const folder of folders) {
+          const { id, modifiedTime, exists } = await findFileInFolder(folder.id);
+          if (exists) {
+            const t = new Date(modifiedTime);
+            if (!bestTime || t > bestTime) {
+              bestTime = t;
+              bestFolderId = folder.id;
+            }
+          }
+        }
+
+        canonicalFolderId = bestFolderId;
+        console.log('[Drive] Canonical folder (most recent data):', canonicalFolderId);
+
+        // Move data files from other folders into canonical folder, then trash duplicates
+        for (const folder of folders) {
+          if (folder.id === canonicalFolderId) continue;
+          try {
+            const { id: fileId, exists } = await findFileInFolder(folder.id);
+            if (exists) {
+              // Move file to canonical folder (add parent, remove old parent)
+              await gapi.client.drive.files.update({
+                fileId,
+                addParents: canonicalFolderId,
+                removeParents: folder.id,
+                fields: 'id',
+              });
+              console.log('[Drive] Moved file', fileId, 'to canonical folder');
+            }
+            // Trash the now-empty duplicate folder
+            await gapi.client.drive.files.update({ fileId: folder.id, resource: { trashed: true } });
+            console.log('[Drive] Trashed duplicate folder:', folder.id);
+          } catch(e) {
+            console.warn('[Drive] Could not clean up folder', folder.id, e);
+          }
+        }
+
+        setDriveStatus('✓ Merged duplicate folders into one');
+      }
+
+      // Step 3: Write / update the pointer so all future sessions go direct
+      pointerId = await writePointerFile(pointerId, canonicalFolderId);
+      console.log('[Drive] Pointer written:', pointerId, '→', canonicalFolderId);
+
+      return { folderId: canonicalFolderId, pointerId };
     }
   </script>
   <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
@@ -806,6 +943,64 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
     }
+
+    /* ── Tabs ─────────────────────────────────────────────────── */
+    .tab-nav { display:flex; gap:4px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:0; }
+    .tab-btn {
+      padding:8px 18px; border-radius:var(--r-sm) var(--r-sm) 0 0;
+      border:1px solid transparent; border-bottom:none;
+      background:none; color:var(--text-muted); font-size:13px; font-weight:500;
+      cursor:pointer; transition:all var(--transition); margin-bottom:-1px;
+    }
+    .tab-btn:hover { color:var(--text); background:var(--surface-3); }
+    .tab-btn.active { background:var(--surface-2); border-color:var(--border); color:var(--accent); }
+
+    /* ── Rechurn Callout ──────────────────────────────────────── */
+    .rechurn-callout {
+      background:var(--accent-dim); border:1px solid rgba(61,220,132,0.25);
+      border-radius:var(--r-md); padding:12px 16px; margin-bottom:14px;
+    }
+    .rechurn-callout-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; }
+    .rechurn-item { padding:10px 0; border-bottom:1px solid rgba(61,220,132,0.1); }
+    .rechurn-item:last-child { border-bottom:none; }
+
+    /* ── Bank group header row ────────────────────────────────── */
+    .bank-group-header td {
+      padding:6px 12px 4px; background:var(--surface-3);
+      border-bottom:1px solid var(--border-bright); border-top:1px solid var(--border-bright);
+    }
+    .bank-group-name { font-weight:700; font-size:12px; color:var(--text); letter-spacing:.01em; }
+    .churn-badge {
+      display:inline-flex; align-items:center; padding:1px 7px;
+      border-radius:999px; font-family:var(--font-mono); font-size:9px;
+      background:var(--accent-dim); color:var(--accent); border:1px solid rgba(61,220,132,0.2);
+      margin-left:6px;
+    }
+    .pill-blue { background:var(--blue-dim); color:var(--blue); border:1px solid rgba(91,163,232,0.2); }
+
+    /* ── Date label inline ────────────────────────────────────── */
+    .date-label {
+      font-family:var(--font-mono); font-size:9px; letter-spacing:.06em;
+      color:var(--text-muted); margin-right:2px;
+    }
+
+    /* ── History tab ──────────────────────────────────────────── */
+    .history-bank-card {
+      background:var(--surface-3); border:1px solid var(--border);
+      border-radius:var(--r-md); margin-bottom:12px; overflow:hidden;
+    }
+    .history-bank-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 16px; background:var(--surface-3);
+      border-bottom:1px solid var(--border);
+    }
+    .history-bank-name { font-size:14px; font-weight:700; color:var(--text); }
+    .history-row {
+      display:flex; align-items:flex-start; justify-content:space-between;
+      gap:12px; padding:12px 16px; border-bottom:1px solid var(--border);
+    }
+    .history-row:last-child { border-bottom:none; }
+    .history-row-main { flex:1; min-width:0; }
   </style>
 </head>
 <body>
@@ -827,150 +1022,216 @@
     </div>
   </header>
 
-  <!-- Summary -->
-  <div class="summary-grid" id="summary">
-    <div class="summary-card">
-      <div class="summary-label">Expected Bonuses</div>
-      <div class="summary-value" id="summary-expected">$0</div>
-      <div class="summary-sub">All non‑cancelled</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Received (All Time)</div>
-      <div class="summary-value" id="summary-received">$0</div>
-      <div class="summary-sub">Based on posted dates</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Received This Year</div>
-      <div class="summary-value" id="summary-tax-year">$0</div>
-      <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Pending This Year</div>
-      <div class="summary-value" id="summary-pending-year">$0</div>
-      <div class="summary-sub">Planned / in progress</div>
-    </div>
+  <!-- ── TAB NAV ─────────────────────────────────────────────────── -->
+  <div class="tab-nav" id="tab-nav">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="history">History &amp; Timeline</button>
   </div>
 
-  <!-- Per-person summary -->
-  <div class="summary-grid" id="person-summary" style="margin-bottom:16px;">
-    <div class="summary-card">
-      <div class="summary-label">You — Expected</div>
-      <div class="summary-value" id="ps-you-expected">$0</div>
-      <div class="summary-sub" id="ps-you-roi"></div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Spouse — Expected</div>
-      <div class="summary-value" id="ps-spouse-expected">$0</div>
-      <div class="summary-sub" id="ps-spouse-roi"></div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Joint — Expected</div>
-      <div class="summary-value" id="ps-joint-expected">$0</div>
-      <div class="summary-sub" id="ps-joint-roi"></div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Avg $/day (open)</div>
-      <div class="summary-value" id="ps-avg-roi" style="color:var(--text)">—</div>
-      <div class="summary-sub">Bonus ÷ days open</div>
-    </div>
-  </div>
+  <!-- ══ DASHBOARD TAB ══════════════════════════════════════════════ -->
+  <div id="tab-dashboard">
 
-  <!-- Pipeline -->
-  <div class="pipeline" id="pipeline-bar">
-    <div class="pipe-stage"><div class="pipe-label">Planned</div><div class="pipe-count" id="pipe-planned">0</div></div>
-    <div class="pipe-stage"><div class="pipe-label">In Progress</div><div class="pipe-count" id="pipe-in_progress">0</div></div>
-    <div class="pipe-stage"><div class="pipe-label">Req. Met</div><div class="pipe-count" id="pipe-requirements_met">0</div></div>
-    <div class="pipe-stage"><div class="pipe-label">Posted</div><div class="pipe-count" id="pipe-bonus_posted">0</div></div>
-    <div class="pipe-stage"><div class="pipe-label">Closing</div><div class="pipe-count" id="pipe-closing">0</div></div>
-    <div class="pipe-stage"><div class="pipe-label">Closed</div><div class="pipe-count" id="pipe-closed">0</div></div>
-  </div>
-
-  <!-- This week -->
-  <div class="week-widget">
-    <div class="week-widget-head"><span class="live-dot"></span>&nbsp; This Week's Actions</div>
-    <div id="week-list"><span class="week-empty">Nothing urgent this week.</span></div>
-  </div>
-
-  <!-- Person filter -->
-  <div class="person-tabs" id="person-tabs">
-    <button class="person-tab active" data-person="all">All</button>
-    <button class="person-tab" data-person="you">You</button>
-    <button class="person-tab" data-person="spouse">Spouse</button>
-    <button class="person-tab" data-person="joint">Joint</button>
-  </div>
-
-  <!-- Main table panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Active &amp; Completed Bonuses</span>
-      <button type="button" class="btn-primary btn-sm" id="open-form-btn" disabled>+ Add Bonus</button>
-    </div>
-    <div class="table-toolbar">
-      <div class="toolbar-group">
-        <span class="tag tag-count" id="row-count-tag">0 bonuses</span>
+    <!-- Summary cards -->
+    <div class="summary-grid" id="summary">
+      <div class="summary-card">
+        <div class="summary-label">Expected Bonuses</div>
+        <div class="summary-value" id="summary-expected">$0</div>
+        <div class="summary-sub">All non‑cancelled</div>
       </div>
-      <div class="toolbar-group">
-        <select id="filter-status" class="small-select">
-          <option value="all">All statuses</option>
-          <option value="open">Only open</option>
-          <option value="in_progress">In progress</option>
-          <option value="bonus_posted">Bonus posted</option>
-          <option value="ready_to_close">Ready to close</option>
-          <option value="repeat_ready">Repeat eligible</option>
-        </select>
-        <input type="text" id="search-text" class="small-input" placeholder="Search bank or account…" style="width:180px; font-size:12px; padding:6px 10px;">
+      <div class="summary-card">
+        <div class="summary-label">Received (All Time)</div>
+        <div class="summary-value" id="summary-received">$0</div>
+        <div class="summary-sub">Based on posted dates</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Received This Year</div>
+        <div class="summary-value" id="summary-tax-year">$0</div>
+        <div class="summary-sub" id="summary-tax-year-label">Current calendar year</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Pending This Year</div>
+        <div class="summary-value" id="summary-pending-year">$0</div>
+        <div class="summary-sub">Planned / in progress</div>
       </div>
     </div>
-    <div class="table-wrapper" id="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Bank / Account</th>
-            <th>Person</th>
-            <th>Status</th>
-            <th>Bonus</th>
-            <th>Key Dates</th>
-            <th>Requirements</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="bonus-rows"></tbody>
-      </table>
-      <div class="empty-state" id="empty-state">No bonuses yet — connect Drive then add your first offer.</div>
-    </div>
-  </div>
 
-  <!-- Reminders -->
-  <div class="panel" id="reminders-panel">
-    <div class="panel-header">
-      <span class="panel-title">Upcoming Repeats &amp; Deadlines</span>
+    <!-- Per-person summary -->
+    <div class="summary-grid" id="person-summary" style="margin-bottom:16px;">
+      <div class="summary-card">
+        <div class="summary-label">You — Expected</div>
+        <div class="summary-value" id="ps-you-expected">$0</div>
+        <div class="summary-sub" id="ps-you-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Spouse — Expected</div>
+        <div class="summary-value" id="ps-spouse-expected">$0</div>
+        <div class="summary-sub" id="ps-spouse-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Joint — Expected</div>
+        <div class="summary-value" id="ps-joint-expected">$0</div>
+        <div class="summary-sub" id="ps-joint-roi"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Avg $/day (open)</div>
+        <div class="summary-value" id="ps-avg-roi" style="color:var(--text)">—</div>
+        <div class="summary-sub">Bonus ÷ days open</div>
+      </div>
     </div>
-    <p class="helper-text" id="reminders-empty">No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.</p>
-    <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
-  </div>
 
-  <!-- Drive -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Backup &amp; Google Drive</span>
+    <!-- ── RECHURN CALLOUT ──────────────────────────────────────── -->
+    <div id="rechurn-callout" style="display:none;" class="rechurn-callout">
+      <div class="rechurn-callout-head">
+        <span>🔁 <strong id="rechurn-count">0</strong> banks eligible to rechurn now</span>
+        <button class="btn-ghost btn-sm" id="rechurn-toggle">Show ▾</button>
+      </div>
+      <div id="rechurn-list" style="display:none; margin-top:10px;"></div>
     </div>
-    <p class="helper-text">Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync. On connect, existing Drive data loads automatically.</p>
-    <div class="drive-section">
-      <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled>Connect Drive</button>
-      <button type="button" class="btn-secondary btn-sm" id="drive-save-btn" disabled>Save to Drive</button>
-      <span class="drive-status" id="drive-status">Not connected.</span>
+
+    <!-- Pipeline -->
+    <div class="pipeline" id="pipeline-bar">
+      <div class="pipe-stage"><div class="pipe-label">Planned</div><div class="pipe-count" id="pipe-planned">0</div></div>
+      <div class="pipe-stage"><div class="pipe-label">In Progress</div><div class="pipe-count" id="pipe-in_progress">0</div></div>
+      <div class="pipe-stage"><div class="pipe-label">Req. Met</div><div class="pipe-count" id="pipe-requirements_met">0</div></div>
+      <div class="pipe-stage"><div class="pipe-label">Posted</div><div class="pipe-count" id="pipe-bonus_posted">0</div></div>
+      <div class="pipe-stage"><div class="pipe-label">Closing</div><div class="pipe-count" id="pipe-closing">0</div></div>
+      <div class="pipe-stage"><div class="pipe-label">Closed</div><div class="pipe-count" id="pipe-closed">0</div></div>
+    </div>
+
+    <!-- This week -->
+    <div class="week-widget">
+      <div class="week-widget-head"><span class="live-dot"></span>&nbsp; This Week's Actions</div>
+      <div id="week-list"><span class="week-empty">Nothing urgent this week.</span></div>
+    </div>
+
+    <!-- Person filter -->
+    <div class="person-tabs" id="person-tabs">
+      <button class="person-tab active" data-person="all">All</button>
+      <button class="person-tab" data-person="you">You</button>
+      <button class="person-tab" data-person="spouse">Spouse</button>
+      <button class="person-tab" data-person="joint">Joint</button>
+    </div>
+
+    <!-- ── MAIN TABLE PANEL (active bonuses, grouped by bank) ──── -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Active Bonuses</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="btn-secondary btn-sm" id="import-csv-btn">⬆ Import CSV</button>
+          <button type="button" class="btn-primary btn-sm" id="open-form-btn" disabled>+ Add Bonus</button>
+        </div>
+      </div>
+      <div class="table-toolbar">
+        <div class="toolbar-group">
+          <span class="tag tag-count" id="row-count-tag">0 bonuses</span>
+        </div>
+        <div class="toolbar-group">
+          <select id="filter-status" class="small-select">
+            <option value="open" selected>Active only</option>
+            <option value="all">All statuses</option>
+            <option value="in_progress">In progress</option>
+            <option value="bonus_posted">Bonus posted</option>
+            <option value="ready_to_close">Ready to close</option>
+            <option value="repeat_ready">Repeat eligible</option>
+          </select>
+          <input type="text" id="search-text" class="small-input" placeholder="Search bank…" style="width:160px;font-size:12px;padding:6px 10px;">
+        </div>
+      </div>
+
+      <!-- Grouped-by-bank table -->
+      <div class="table-wrapper" id="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Bank / Account</th>
+              <th>Person</th>
+              <th>Status</th>
+              <th>Bonus</th>
+              <th>Key Dates</th>
+              <th>Requirements</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bonus-rows"></tbody>
+        </table>
+        <div class="empty-state" id="empty-state">No active bonuses — connect Drive then add your first offer.</div>
+      </div>
+
+      <!-- Closed / hidden bonuses toggle -->
+      <div id="closed-toggle-row" style="display:none; margin-top:12px; text-align:center;">
+        <button type="button" class="btn-ghost btn-sm" id="closed-toggle-btn">
+          📦 <span id="closed-toggle-label">Show closed bonuses</span>
+        </button>
+      </div>
+      <div id="closed-section" style="display:none; margin-top:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Bank / Account</th>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Person</th>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Bonus</th>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Closed</th>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Repeat Eligible</th>
+              <th style="padding:8px 12px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);border-bottom:1px solid var(--border);">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="closed-rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Reminders -->
+    <div class="panel" id="reminders-panel">
+      <div class="panel-header">
+        <span class="panel-title">Upcoming Repeats &amp; Deadlines</span>
+      </div>
+      <p class="helper-text" id="reminders-empty">No upcoming reminders. Set cooldowns, deadlines, or planned close dates to see them here.</p>
+      <ul id="reminders-list" style="list-style:none; padding:0; margin:0;"></ul>
+    </div>
+
+    <!-- Drive -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Backup &amp; Google Drive</span>
+      </div>
+      <p class="helper-text">Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync. On connect, existing Drive data loads automatically.</p>
+      <div class="drive-section">
+        <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled>Connect Drive</button>
+        <button type="button" class="btn-secondary btn-sm" id="drive-save-btn" disabled>Save to Drive</button>
+        <span class="drive-status" id="drive-status">Not connected.</span>
+      </div>
+    </div>
+
+  </div><!-- /#tab-dashboard -->
+
+  <!-- ══ HISTORY TAB ════════════════════════════════════════════════ -->
+  <div id="tab-history" style="display:none;">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Earnings Timeline — All Completed Bonuses</span>
+        <span class="tag tag-count" id="history-count-tag">0 bonuses</span>
+      </div>
+      <p class="helper-text" style="margin-bottom:12px;">Sorted by bonus posted date, newest first. Shows every completed churn. Use "Rechurn" to start a new round at the same bank.</p>
+
+      <!-- Year filter pills -->
+      <div id="history-year-pills" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>
+
+      <!-- Bank grouping in history -->
+      <div id="history-bank-groups"></div>
+      <div class="empty-state" id="history-empty" style="display:none;">No completed bonuses yet. Mark bonuses as closed to see them here.</div>
     </div>
   </div>
 
 </div><!-- /.shell -->
 
-<!-- Modal -->
+<!-- ══ ADD/EDIT MODAL ═════════════════════════════════════════════ -->
 <div class="modal-backdrop" id="form-modal">
   <div class="modal-dialog">
     <div class="modal-header">
       <span class="modal-title" id="form-title">Add Bank Bonus</span>
       <div style="display:flex; align-items:center; gap:8px;">
         <span class="pill pill-amber" id="editing-pill" style="display:none;">Editing</span>
+        <span class="pill pill-blue" id="clone-pill" style="display:none;">Rechurn Clone</span>
         <button type="button" class="btn-ghost btn-sm" id="close-form-btn">✕ Close</button>
       </div>
     </div>
@@ -978,9 +1239,7 @@
       <form id="bonus-form">
         <input type="hidden" id="bonus-id" value="">
         <div class="field-grid">
-
           <div class="field-section-header">Core Info</div>
-
           <div>
             <label for="person">Person</label>
             <select id="person">
@@ -1009,9 +1268,7 @@
             <label for="loginLabel">Login Label (no password)</label>
             <input id="loginLabel" type="text" placeholder="e.g. WF Checking (see 1Password)">
           </div>
-
           <div class="field-section-header">Bonus &amp; Status</div>
-
           <div>
             <label for="bonusAmount">Bonus Amount ($) *</label>
             <input id="bonusAmount" type="number" step="0.01" min="0" required placeholder="e.g. 400">
@@ -1042,9 +1299,7 @@
               <option value="lifetime_household">Lifetime / per household</option>
             </select>
           </div>
-
           <div class="field-section-header">Dates</div>
-
           <div>
             <label for="dateOpened">Date Opened</label>
             <input id="dateOpened" type="date">
@@ -1070,9 +1325,7 @@
             <label for="dateClosed">Date Closed</label>
             <input id="dateClosed" type="date">
           </div>
-
           <div class="field-section-header">Requirements</div>
-
           <div>
             <label for="minBalance">Min Balance Required ($)</label>
             <input id="minBalance" type="number" step="0.01" min="0" placeholder="e.g. 1500">
@@ -1109,9 +1362,7 @@
             <label for="pullDate">Pull Date</label>
             <input id="pullDate" type="date">
           </div>
-
           <div class="field-section-header">Fees</div>
-
           <div>
             <label for="monthlyFee">Monthly Fee ($)</label>
             <input id="monthlyFee" type="number" step="0.01" min="0" placeholder="e.g. 12">
@@ -1126,9 +1377,7 @@
             <div class="helper-text">Days after opening before you can close without the fee.</div>
           </div>
           <div></div>
-
           <div class="field-section-header">Cooldown &amp; Repeat</div>
-
           <div>
             <label for="cooldownPreset">Repeat Rule Preset</label>
             <select id="cooldownPreset">
@@ -1154,9 +1403,7 @@
             <label for="plannedLifeMonths">Planned Account Life (months)</label>
             <input id="plannedLifeMonths" type="number" min="0" step="1" placeholder="e.g. 6">
           </div>
-
           <div class="field-section-header">Reminders</div>
-
           <div>
             <label for="remindBeforeDeadlineDays">Remind Before Deadline (days)</label>
             <input id="remindBeforeDeadlineDays" type="number" min="0" step="1" placeholder="e.g. 7">
@@ -1170,9 +1417,7 @@
             <input id="remindBeforeCloseDays" type="number" min="0" step="1" placeholder="e.g. 14">
           </div>
           <div></div>
-
           <div class="field-section-header">Notes &amp; Links</div>
-
           <div class="field-full">
             <label for="requirements">Requirements Summary</label>
             <textarea id="requirements" placeholder="e.g. $4,000 DD within 90 days; 10 debit transactions; maintain $1k balance…"></textarea>
@@ -1191,10 +1436,9 @@
           </div>
           <div class="field-full">
             <label for="notes">Notes</label>
-            <textarea id="notes" placeholder="Which ACH coded as DD, clawback risk, 1099‑INT details, follow‑ups, etc."></textarea>
+            <textarea id="notes" placeholder="Which ACH coded as DD, clawback risk, 1099-INT details, follow-ups, etc."></textarea>
           </div>
         </div>
-
         <div class="actions-row">
           <button type="button" class="btn-ghost btn-sm" id="cancel-btn">Cancel</button>
           <button type="button" class="btn-secondary btn-sm" id="reset-btn">Clear Form</button>
@@ -1208,35 +1452,78 @@
   </div>
 </div>
 
+<!-- ══ CSV IMPORT MODAL ══════════════════════════════════════════ -->
+<div class="modal-backdrop" id="csv-modal">
+  <div class="modal-dialog" style="max-width:620px;">
+    <div class="modal-header">
+      <span class="modal-title">Import Old Data via CSV</span>
+      <button type="button" class="btn-ghost btn-sm" id="close-csv-btn">✕ Close</button>
+    </div>
+    <div class="modal-body">
+      <p class="helper-text" style="margin-bottom:12px;">
+        Paste a CSV with your existing bonuses. Only <strong>bank</strong> and <strong>bonus_amount</strong> are required.
+        All other columns are optional — leave them blank and the app fills in defaults.
+      </p>
+      <div style="background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);line-height:1.7;">
+        <strong style="color:var(--accent);">Supported columns (any order, header row required):</strong><br>
+        bank, account_name, account_last4, person, status, bonus_amount, referral_bonus,<br>
+        date_opened, date_closed, date_bonus_posted, deadline, cooldown_months,<br>
+        dd_amount, dd_count, min_balance, monthly_fee, etf_amount, etf_days,<br>
+        requirements, fee_waiver, source_url, notes, per_household, chex_systems
+      </div>
+      <label for="csv-input">Paste CSV here</label>
+      <textarea id="csv-input" style="min-height:160px;font-family:var(--font-mono);font-size:11px;" placeholder="bank,account_name,bonus_amount,status,date_opened,date_closed&#10;Chase,Total Checking,300,closed,2023-01-15,2023-08-01&#10;BMO,Smart Advantage,400,closed,2023-03-01,2023-09-15"></textarea>
+      <div id="csv-preview" style="margin-top:10px;"></div>
+      <div class="actions-row">
+        <button type="button" class="btn-ghost btn-sm" id="csv-cancel-btn">Cancel</button>
+        <button type="button" class="btn-secondary btn-sm" id="csv-preview-btn">Preview</button>
+        <button type="button" class="btn-primary btn-sm" id="csv-import-btn" disabled>Import All</button>
+      </div>
+      <div id="csv-error" class="error-text" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
-  const state = { bonuses: [], editingId: null, personFilter: 'all' };
-  const STORAGE_KEY         = 'bankBonusData_v2';
-  const DRIVE_FILE_ID_KEY   = 'bankBonusDriveFileId_v1';
-  const DRIVE_FOLDER_ID_KEY = 'bankBonusDriveFolderId_v1';
-  // DRIVE_FILE_NAME / DRIVE_FOLDER_NAME defined in top <script>
-  let driveFileId   = null;
-  let driveFolderId = null;
+  const state = { bonuses: [], editingId: null, personFilter: 'all', historyYear: 'all' };
+  const STORAGE_KEY          = 'bankBonusData_v2';
+  const DRIVE_FILE_ID_KEY    = 'bankBonusDriveFileId_v1';
+  const DRIVE_FOLDER_ID_KEY  = 'bankBonusDriveFolderId_v1';
+  const DRIVE_POINTER_ID_KEY = 'bankBonusDrivePointerId_v1';
+  let driveFileId    = null;
+  let driveFolderId  = null;
+  let drivePointerId = null;
   let isDriveConnected = false;
+  let closedSectionOpen = false;
+  let rechurnOpen = false;
+  let historyYearFilter = 'all';
+
   const currency = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
   const today = new Date(); today.setHours(0,0,0,0);
   const currentYear = today.getFullYear();
   const el = id => document.getElementById(id);
-  const formEl = el('bonus-form');
-  const formModalEl = el('form-modal');
-  const openFormBtn = el('open-form-btn');
-  const closeFormBtn = el('close-form-btn');
-  const cancelBtn = el('cancel-btn');
-  const formErrorEl = el('form-error');
+  const formEl        = el('bonus-form');
+  const formModalEl   = el('form-modal');
+  const openFormBtn   = el('open-form-btn');
+  const closeFormBtn  = el('close-form-btn');
+  const cancelBtn     = el('cancel-btn');
+  const formErrorEl   = el('form-error');
   const editingPillEl = el('editing-pill');
-  const formTitleEl = el('form-title');
+  const clonePillEl   = el('clone-pill');
+  const formTitleEl   = el('form-title');
   const saveBtnLabelEl = el('save-btn-label');
 
+  const CLOSED_STATUSES = ['closed','closed_repeat','cancelled'];
+  const isClosedBonus = b => CLOSED_STATUSES.includes(b.status) && b.dateClosed;
+
+  // ── Helpers ────────────────────────────────────────────────────────────
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
   function parseDate(str) { if (!str) return null; const d = new Date(str + 'T00:00:00'); return isNaN(d) ? null : d; }
   function daysBetween(a, b) { if (!a || !b) return null; return Math.round((b - a) / 86400000); }
   function addMonths(date, months) { const d = new Date(date); d.setMonth(d.getMonth() + months); return d; }
   function fmtDate(d) { if (!d) return '—'; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  function fmtYear(d) { return d ? new Date(d+'T00:00:00').getFullYear() : null; }
 
   function computeNextEligible(b) {
     const months = b.cooldownPreset === 'lifetime' ? null : (parseInt(b.cooldownMonths) || null);
@@ -1271,112 +1558,113 @@
     return '';
   }
 
+  // ── Persistence ────────────────────────────────────────────────────────
   function saveLocal() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.bonuses)); }
   function loadLocal() { try { const r = localStorage.getItem(STORAGE_KEY); if (r) state.bonuses = JSON.parse(r); } catch(e) {} }
   function serializeData() { return JSON.stringify({ version: 2, bonuses: state.bonuses }, null, 2); }
   function deserializeData(raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p; if (p && Array.isArray(p.bonuses)) return p.bonuses; return []; }
 
-  // Upload or update a file's content via multipart upload.
-  // folderId is only used when creating a new file (first save).
-  async function uploadFileToDrive(fileId, folderId, content) {
+  // ── Drive ──────────────────────────────────────────────────────────────
+  // Upload or patch the JSON data file inside the canonical folder.
+  async function uploadDataFile(fileId, folderId, content) {
     const token = gapi.auth.getToken().access_token;
-    const metadata = { name: DRIVE_FILE_NAME, mimeType: 'application/json' };
-    const boundary = 'bbt_boundary_' + Date.now();
+    const meta  = fileId ? { name: DRIVE_FILE_NAME } : { name: DRIVE_FILE_NAME, parents: [folderId] };
+    const boundary = 'bbt_' + Date.now();
     const body = [
-      `--${boundary}`,
-      'Content-Type: application/json',
-      '',
-      JSON.stringify(fileId ? metadata : { ...metadata, parents: [folderId] }),
-      `--${boundary}`,
-      'Content-Type: application/json',
-      '',
-      content,
-      `--${boundary}--`,
+      '--' + boundary, 'Content-Type: application/json', '', JSON.stringify(meta),
+      '--' + boundary, 'Content-Type: application/json', '', content,
+      '--' + boundary + '--',
     ].join('\r\n');
-
     const url = fileId
-      ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+      ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=multipart'
       : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-
     const res = await fetch(url, {
       method: fileId ? 'PATCH' : 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-      },
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + boundary },
       body,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-    return await res.json(); // { id, ... }
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+    return await res.json();
   }
 
   async function driveSave() {
     if (!isDriveConnected) return;
     const content = serializeData();
     try {
-      setDriveStatus('↻ Saving to Drive…');
-      // Ensure folder exists in this user's Drive
+      setDriveStatus('↻ Saving…');
+      // Ensure we have a canonical folder (resolves duplicates if needed)
       if (!driveFolderId) {
-        setDriveStatus('↻ Locating / creating folder…');
-        driveFolderId = await getOrCreateFolder();
-        localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
+        const resolved = await resolveCanonicalFolder();
+        driveFolderId  = resolved.folderId;
+        drivePointerId = resolved.pointerId;
+        localStorage.setItem(DRIVE_FOLDER_ID_KEY,  driveFolderId);
+        localStorage.setItem(DRIVE_POINTER_ID_KEY, drivePointerId);
       }
-      const result = await uploadFileToDrive(driveFileId, driveFolderId, content);
+      const result = await uploadDataFile(driveFileId, driveFolderId, content);
       if (!driveFileId) {
         driveFileId = result.id;
         localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
       }
-      setDriveStatus('✓ Saved to Drive — ' + new Date().toLocaleTimeString());
-    } catch(err) {
-      setDriveStatus('⚠ Drive save failed: ' + (err.message || err));
-    }
+      setDriveStatus('✓ Saved — ' + new Date().toLocaleTimeString());
+    } catch(err) { setDriveStatus('⚠ Save failed: ' + (err.message || err)); }
   }
 
   async function driveLoad() {
     try {
-      setDriveStatus('↻ Looking for your folder…');
+      // THE FIX: resolve the single canonical folder (handles duplicates automatically)
+      const resolved = await resolveCanonicalFolder();
+      driveFolderId  = resolved.folderId;
+      drivePointerId = resolved.pointerId;
+      localStorage.setItem(DRIVE_FOLDER_ID_KEY,  driveFolderId);
+      localStorage.setItem(DRIVE_POINTER_ID_KEY, drivePointerId);
 
-      // Step 1: find or create the folder in the user's Drive
-      driveFolderId = await getOrCreateFolder();
-      localStorage.setItem(DRIVE_FOLDER_ID_KEY, driveFolderId);
-      setDriveStatus('↻ Searching for data file…');
-
-      // Step 2: look for the data file inside that folder
+      setDriveStatus('↻ Loading data file…');
       const { id, modifiedTime, exists } = await findFileInFolder(driveFolderId);
 
       if (exists) {
         driveFileId = id;
         localStorage.setItem(DRIVE_FILE_ID_KEY, driveFileId);
-        setDriveStatus('↻ Loading data…');
-        const cr = await gapi.client.drive.files.get({ fileId: driveFileId, alt: 'media' });
+        const cr  = await gapi.client.drive.files.get({ fileId: driveFileId, alt: 'media' });
         const raw = typeof cr.body === 'string' ? cr.body : JSON.stringify(cr.result);
-        state.bonuses = deserializeData(raw);
+        const driveData  = deserializeData(raw);
+        const localCount = state.bonuses.length;
+        const driveCount = driveData.length;
+
+        if (localCount > 0 && driveCount > 0 && localCount !== driveCount) {
+          // Both local and Drive have data and they differ — smart merge by ID
+          // Keep all unique entries from both sides (union by id)
+          const merged = [...driveData];
+          const driveIds = new Set(driveData.map(b => b.id));
+          state.bonuses.forEach(b => { if (!driveIds.has(b.id)) merged.push(b); });
+          state.bonuses = merged;
+          setDriveStatus('✓ Merged local + Drive data (' + merged.length + ' total) — ' + new Date(modifiedTime).toLocaleString());
+        } else {
+          state.bonuses = driveData;
+          setDriveStatus('✓ Loaded from Drive — ' + new Date(modifiedTime).toLocaleString());
+        }
         saveLocal();
         renderAll();
-        setDriveStatus(`✓ Loaded from Drive (last saved ${new Date(modifiedTime).toLocaleString()})`);
+        // Push merged data back to Drive immediately so both sides are in sync
+        await driveSave();
       } else {
-        // File doesn't exist yet — create it now with current local data
-        setDriveStatus('📁 No existing file found — creating it now…');
-        await driveSave(); // driveSave will use driveFolderId set above
+        // No data file yet — push local data up
+        setDriveStatus('📁 No data file found — saving local data to Drive…');
+        await driveSave();
       }
-    } catch(err) {
-      setDriveStatus('⚠ Drive error: ' + (err.message || err));
-    }
+    } catch(err) { setDriveStatus('⚠ Drive error: ' + (err.message || err)); }
   }
 
-  function setDriveStatus(msg) {
-    el('drive-status').textContent = msg;
-  }
+  function setDriveStatus(msg) { el('drive-status').textContent = msg; }
 
   function connectDrive() {
     tokenClient.callback = async (resp) => {
-      if (resp.error) { el('drive-status').textContent = '⚠ Auth error: ' + resp.error; return; }
+      if (resp.error) { setDriveStatus('⚠ Auth error: ' + resp.error); return; }
       isDriveConnected = true;
       el('drive-connect-btn').textContent = '✓ Drive Connected';
       el('drive-connect-btn').disabled = true;
       el('drive-save-btn').disabled = false;
       el('open-form-btn').disabled = false;
-      el('drive-status').textContent = '↻ Loading from Drive…';
+      setDriveStatus('↻ Loading from Drive…');
       await driveLoad();
     };
     gapi.client.getToken() === null ? tokenClient.requestAccessToken({ prompt: 'consent' }) : tokenClient.requestAccessToken({ prompt: '' });
@@ -1384,179 +1672,354 @@
 
   function persistAll() {
     saveLocal();
-    if (isDriveConnected) {
-      clearTimeout(persistAll._timer);
-      persistAll._timer = setTimeout(driveSave, 1500);
-    }
+    if (isDriveConnected) { clearTimeout(persistAll._timer); persistAll._timer = setTimeout(driveSave, 1500); }
   }
 
+  // ── Label helpers ──────────────────────────────────────────────────────
   function statusLabel(s) {
     return { planned:'Planned', in_progress:'In Progress', requirements_met:'Req. Met', bonus_posted:'Bonus Posted', closed:'Closed', closed_repeat:'Closed/Repeat', closing:'Closing', cancelled:'Cancelled' }[s] || s;
   }
-
   function statusPillClass(s) {
     if (['bonus_posted','requirements_met'].includes(s)) return 'pill-green';
-    if (['in_progress'].includes(s)) return 'pill-blue';
-    if (['closing'].includes(s)) return 'pill-amber';
-    if (['cancelled'].includes(s)) return 'pill-red';
+    if (s === 'in_progress') return 'pill-blue';
+    if (s === 'closing') return 'pill-amber';
+    if (s === 'cancelled') return 'pill-red';
     return 'pill-default';
   }
-
   function personTag(p) {
     const L = { you:'You', spouse:'Spouse', joint:'Joint' };
     const C = { you:'tag-person-you', spouse:'tag-person-spouse', joint:'tag-person-joint' };
-    return `<span class="tag ${C[p]||''}">${L[p]||p||'—'}</span>`;
+    return '<span class="tag '+( C[p]||'')+'">'+(L[p]||p||'—')+'</span>';
   }
 
+  // ── Summary ────────────────────────────────────────────────────────────
   function renderSummary() {
     const nonC = state.bonuses.filter(b => b.status !== 'cancelled');
     const recv = state.bonuses.filter(b => b.dateBonusPosted);
     const taxY = state.bonuses.filter(b => b.dateBonusPosted && new Date(b.dateBonusPosted).getFullYear() === currentYear);
     const pend = state.bonuses.filter(b => ['planned','in_progress','requirements_met'].includes(b.status));
-    const sum = arr => arr.reduce((a,b) => a + (parseFloat(b.bonusAmount)||0), 0);
-    el('summary-expected').textContent = currency.format(sum(nonC));
-    el('summary-received').textContent = currency.format(sum(recv));
-    el('summary-tax-year').textContent = currency.format(sum(taxY));
+    const sum  = arr => arr.reduce((a,b) => a + (parseFloat(b.bonusAmount)||0), 0);
+    el('summary-expected').textContent   = currency.format(sum(nonC));
+    el('summary-received').textContent   = currency.format(sum(recv));
+    el('summary-tax-year').textContent   = currency.format(sum(taxY));
     el('summary-pending-year').textContent = currency.format(sum(pend));
-    el('summary-tax-year-label').textContent = `${currentYear} calendar year`;
+    el('summary-tax-year-label').textContent = currentYear + ' calendar year';
     ['you','spouse','joint'].forEach(p => {
       const pb = nonC.filter(b => b.person === p);
-      el(`ps-${p}-expected`).textContent = currency.format(sum(pb));
-      const open = pb.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+      el('ps-'+p+'-expected').textContent = currency.format(sum(pb));
+      const open = pb.filter(b => b.dateOpened && !CLOSED_STATUSES.includes(b.status));
       let total = 0, cnt = 0;
       open.forEach(b => { const d = daysBetween(parseDate(b.dateOpened), today); if (d && d > 0 && b.bonusAmount) { total += parseFloat(b.bonusAmount)/d; cnt++; } });
-      el(`ps-${p}-roi`).textContent = cnt > 0 ? `~${currency.format(total/cnt)}/day avg` : '';
+      el('ps-'+p+'-roi').textContent = cnt > 0 ? '~'+currency.format(total/cnt)+'/day avg' : '';
     });
-    const openAll = nonC.filter(b => b.dateOpened && !['closed','closed_repeat','cancelled'].includes(b.status));
+    const openAll = nonC.filter(b => b.dateOpened && !CLOSED_STATUSES.includes(b.status));
     let tr = 0, tc = 0;
     openAll.forEach(b => { const d = daysBetween(parseDate(b.dateOpened), today); if (d && d > 0 && b.bonusAmount) { tr += parseFloat(b.bonusAmount)/d; tc++; } });
-    el('ps-avg-roi').textContent = tc > 0 ? currency.format(tr) + '/day' : '—';
+    el('ps-avg-roi').textContent = tc > 0 ? currency.format(tr)+'/day' : '—';
     el('ps-avg-roi').style.color = tc > 0 ? 'var(--accent)' : 'var(--text)';
   }
 
+  // ── Pipeline ────────────────────────────────────────────────────────────
   function renderPipeline() {
     ['planned','in_progress','requirements_met','bonus_posted','closing','closed'].forEach(s => {
-      const e = el(`pipe-${s}`);
-      if (e) e.textContent = state.bonuses.filter(b => b.status === s).length;
+      const e = el('pipe-'+s); if (e) e.textContent = state.bonuses.filter(b => b.status === s).length;
     });
   }
 
+  // ── This Week ──────────────────────────────────────────────────────────
   function renderWeekWidget() {
     const wOut = new Date(today); wOut.setDate(wOut.getDate() + 7);
     const items = [];
     state.bonuses.forEach(b => {
-      if (b.deadline) { const dl = parseDate(b.deadline); if (dl && dl >= today && dl <= wOut) { const d = daysBetween(today, dl); items.push(`🔴 <strong>${b.bank}</strong> deadline in ${d} day${d===1?'':'s'} (${fmtDate(dl)})`); } }
-      if (isReadyToClose(b)) items.push(`✅ <strong>${b.bank}</strong> ready to close — bonus posted, ETF period elapsed`);
-      if (isRepeatReady(b) && ['closed','closed_repeat'].includes(b.status)) items.push(`🔁 <strong>${b.bank}</strong> cooldown elapsed — eligible to repeat`);
+      if (b.deadline) { const dl = parseDate(b.deadline); if (dl && dl >= today && dl <= wOut) { const d = daysBetween(today,dl); items.push('🔴 <strong>'+b.bank+'</strong> deadline in '+d+' day'+(d===1?'':'s')+' ('+fmtDate(dl)+')'); } }
+      if (isReadyToClose(b)) items.push('✅ <strong>'+b.bank+'</strong> ready to close — bonus posted, ETF period elapsed');
+      if (isRepeatReady(b) && CLOSED_STATUSES.includes(b.status)) items.push('🔁 <strong>'+b.bank+'</strong> cooldown elapsed — eligible to repeat');
       if (b.dateOpened && b.plannedLifeMonths) {
         const op = parseDate(b.dateOpened);
-        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); if (pc >= today && pc <= wOut) { const d = daysBetween(today, pc); items.push(`📅 <strong>${b.bank}</strong> planned close in ${d} day${d===1?'':'s'} (${fmtDate(pc)})`); } }
+        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); if (pc >= today && pc <= wOut) { const d = daysBetween(today,pc); items.push('📅 <strong>'+b.bank+'</strong> planned close in '+d+' day'+(d===1?'':'s')+' ('+fmtDate(pc)+')'); } }
       }
     });
     const wl = el('week-list');
-    wl.innerHTML = items.length === 0 ? '<span class="week-empty">Nothing urgent this week. 🎉</span>' : items.map(i => `<div class="week-item">${i}</div>`).join('');
+    wl.innerHTML = items.length === 0 ? '<span class="week-empty">Nothing urgent this week. 🎉</span>' : items.map(i => '<div class="week-item">'+i+'</div>').join('');
   }
 
+  // ── Rechurn Callout ────────────────────────────────────────────────────
+  function renderRechurnCallout() {
+    const eligible = state.bonuses.filter(b => isRepeatReady(b) && CLOSED_STATUSES.includes(b.status));
+    const callout = el('rechurn-callout');
+    if (eligible.length === 0) { callout.style.display = 'none'; return; }
+    callout.style.display = '';
+    el('rechurn-count').textContent = eligible.length;
+    const list = el('rechurn-list');
+    list.innerHTML = eligible.map(b => {
+      const next = computeNextEligible(b);
+      return '<div class="rechurn-item">'+
+        '<div><strong>'+b.bank+'</strong> — '+b.accountName+' '+personTag(b.person)+'</div>'+
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">Last bonus: '+currency.format(b.bonusAmount||0)+' · Cooldown ended '+fmtDate(next)+'</div>'+
+        '<div style="margin-top:6px;display:flex;gap:6px;">'+
+          '<button class="btn-primary btn-sm" data-rechurn="'+b.id+'">🔁 Rechurn</button>'+
+          '<button class="btn-ghost btn-sm" data-edit="'+b.id+'">Edit</button>'+
+        '</div></div>';
+    }).join('');
+    list.querySelectorAll('[data-rechurn]').forEach(btn => btn.addEventListener('click', () => openRechurn(btn.dataset.rechurn)));
+    list.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openEdit(btn.dataset.edit)));
+  }
+
+  // ── Main Table (active only, grouped by bank) ──────────────────────────
   function filteredBonuses() {
     const sf = el('filter-status').value;
     const st = (el('search-text').value || '').toLowerCase();
     const pf = state.personFilter;
     return state.bonuses.filter(b => {
+      // Hide closed accounts unless filter overrides
+      if (sf === 'open' || sf === 'all') { if (isClosedBonus(b)) return false; }
       if (pf !== 'all' && b.person !== pf) return false;
-      if (sf === 'open') { if (['closed','closed_repeat','cancelled'].includes(b.status)) return false; }
+      if (sf === 'open') { if (CLOSED_STATUSES.includes(b.status)) return false; }
       else if (sf === 'ready_to_close') { if (!isReadyToClose(b)) return false; }
       else if (sf === 'repeat_ready') { if (!isRepeatReady(b)) return false; }
       else if (sf !== 'all') { if (b.status !== sf) return false; }
-      if (st) { const h = `${b.bank} ${b.accountName} ${b.accountHolder||''} ${b.notes||''}`.toLowerCase(); if (!h.includes(st)) return false; }
+      if (st) { const h = (b.bank+' '+(b.accountName||'')+' '+(b.accountHolder||'')+' '+(b.notes||'')).toLowerCase(); if (!h.includes(st)) return false; }
       return true;
     });
   }
 
   function renderTable() {
-    const tbody = el('bonus-rows');
-    const empty = el('empty-state');
-    const cnt = el('row-count-tag');
+    const tbody   = el('bonus-rows');
+    const empty   = el('empty-state');
+    const cnt     = el('row-count-tag');
     const filtered = filteredBonuses();
-    cnt.textContent = `${filtered.length} bonus${filtered.length !== 1 ? 'es' : ''}`;
+
+    // Group by bank name
+    const groups = {};
+    filtered.forEach(b => { if (!groups[b.bank]) groups[b.bank] = []; groups[b.bank].push(b); });
+    const bankNames = Object.keys(groups).sort();
+
+    cnt.textContent = filtered.length + ' bonus' + (filtered.length !== 1 ? 'es' : '');
     tbody.innerHTML = '';
-    if (filtered.length === 0) { empty.style.display = ''; return; }
-    empty.style.display = 'none';
-    filtered.forEach(b => {
-      const nextEl = computeNextEligible(b);
-      const repeatReady = isRepeatReady(b);
-      const readyClose = isReadyToClose(b);
-      const tr = document.createElement('tr');
-      const urg = urgencyClass(b);
-      if (urg) tr.classList.add(urg);
 
-      let datesHtml = '';
-      if (b.dateOpened) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">OPENED</span> ${fmtDate(parseDate(b.dateOpened))}</div>`;
-      if (b.deadline) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">DL</span> ${fmtDate(parseDate(b.deadline))}</div>`;
-      if (b.dateBonusPosted) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--accent);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">POSTED</span> ${fmtDate(parseDate(b.dateBonusPosted))}</div>`;
-      if (b.dateClosed) datesHtml += `<div style="margin-bottom:2px"><span style="color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:.06em">CLOSED</span> ${fmtDate(parseDate(b.dateClosed))}</div>`;
-      if (nextEl) datesHtml += `<div style="margin-bottom:2px"><span style="font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:var(--text-muted)">REPEAT</span> ${fmtDate(nextEl)} ${repeatReady ? '<span class="tag tag-repeat-ready">Ready!</span>' : ''}</div>`;
-      if (readyClose) datesHtml += `<div><span class="tag tag-repeat-ready">▸ Ready to close</span></div>`;
+    if (filtered.length === 0) { empty.style.display = ''; }
+    else {
+      empty.style.display = 'none';
+      bankNames.forEach(bank => {
+        const rows = groups[bank];
+        // How many times has this bank been churned total (including closed)?
+        const totalChurns = state.bonuses.filter(b => b.bank === bank).length;
+        const churnBadge  = totalChurns > 1 ? '<span class="churn-badge">×'+totalChurns+' churned</span>' : '';
 
-      let reqHtml = '';
-      if (b.minBalance) reqHtml += `<div style="font-size:11px;margin-bottom:1px">Min bal: ${currency.format(b.minBalance)}${b.minBalanceDays?` × ${b.minBalanceDays}d`:''}</div>`;
-      if (b.ddAmount) reqHtml += `<div style="font-size:11px;margin-bottom:1px">DD: ${currency.format(b.ddAmount)}${b.ddCount?` × ${b.ddCount}`:''}</div>`;
-      if (b.etfAmount) reqHtml += `<div style="font-size:11px;margin-bottom:1px">ETF: ${currency.format(b.etfAmount)}${b.etfDays?` (hold ${b.etfDays}d)`:''}</div>`;
-      if (b.chexSystems) reqHtml += `<div style="font-size:11px;margin-bottom:1px">Pull: ${b.chexSystems}</div>`;
-      if (b.requirements) reqHtml += `<div class="cell-notes" title="${b.requirements}">${b.requirements}</div>`;
+        // Bank group header row
+        if (bankNames.length > 1 || churnBadge) {
+          const hdr = document.createElement('tr');
+          hdr.className = 'bank-group-header';
+          hdr.innerHTML = '<td colspan="7"><span class="bank-group-name">'+bank+'</span> '+churnBadge+'</td>';
+          tbody.appendChild(hdr);
+        }
 
-      tr.innerHTML = `
-        <td data-label="Bank / Account">
-          <div class="cell-bank">${b.bank}${b.accountLast4?` <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">···${b.accountLast4}</span>`:''}</div>
-          <div class="cell-sub">${b.accountName}</div>
-          ${b.sourceUrl ? `<div style="margin-top:3px"><a href="${b.sourceUrl}" target="_blank" rel="noopener" class="cell-link">Source ↗</a></div>` : ''}
-        </td>
-        <td data-label="Person">${personTag(b.person)}</td>
-        <td data-label="Status">
-          <span class="pill ${statusPillClass(b.status)}">${statusLabel(b.status)}</span>
-          ${b.referralBonus ? `<div style="font-size:10px;color:var(--text-muted);margin-top:3px">+${currency.format(b.referralBonus)} ref.</div>` : ''}
-        </td>
-        <td data-label="Bonus">
-          <span style="font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--accent)">${currency.format(b.bonusAmount||0)}</span>
-          ${b.monthlyFee ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Fee: ${currency.format(b.monthlyFee)}/mo</div>` : ''}
-        </td>
-        <td data-label="Key Dates" style="font-size:12px">${datesHtml||'—'}</td>
-        <td data-label="Requirements">${reqHtml||'<span style="color:var(--text-dim)">—</span>'}</td>
-        <td data-label="Actions">
-          <div style="display:flex;gap:4px">
-            <button type="button" class="btn-secondary btn-sm" data-edit="${b.id}">Edit</button>
-            <button type="button" class="btn-danger btn-sm" data-delete="${b.id}">Del</button>
-          </div>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
+        rows.forEach(b => {
+          const nextEl = computeNextEligible(b);
+          const repeatReady = isRepeatReady(b);
+          const readyClose  = isReadyToClose(b);
+          const tr = document.createElement('tr');
+          const urg = urgencyClass(b);
+          if (urg) tr.classList.add(urg);
+
+          let datesHtml = '';
+          if (b.dateOpened)      datesHtml += '<div style="margin-bottom:2px"><span class="date-label">OPENED</span> '+fmtDate(parseDate(b.dateOpened))+'</div>';
+          if (b.deadline)        datesHtml += '<div style="margin-bottom:2px"><span class="date-label">DL</span> '+fmtDate(parseDate(b.deadline))+'</div>';
+          if (b.dateBonusPosted) datesHtml += '<div style="margin-bottom:2px"><span class="date-label" style="color:var(--accent)">POSTED</span> '+fmtDate(parseDate(b.dateBonusPosted))+'</div>';
+          if (nextEl) datesHtml += '<div style="margin-bottom:2px"><span class="date-label">REPEAT</span> '+fmtDate(nextEl)+' '+(repeatReady ? '<span class="tag tag-repeat-ready">Ready!</span>' : '')+'</div>';
+          if (readyClose) datesHtml += '<div><span class="tag tag-repeat-ready">▸ Ready to close</span></div>';
+
+          let reqHtml = '';
+          if (b.minBalance) reqHtml += '<div style="font-size:11px;margin-bottom:1px">Min bal: '+currency.format(b.minBalance)+(b.minBalanceDays?' × '+b.minBalanceDays+'d':'')+'</div>';
+          if (b.ddAmount)   reqHtml += '<div style="font-size:11px;margin-bottom:1px">DD: '+currency.format(b.ddAmount)+(b.ddCount?' × '+b.ddCount:'')+'</div>';
+          if (b.etfAmount)  reqHtml += '<div style="font-size:11px;margin-bottom:1px">ETF: '+currency.format(b.etfAmount)+(b.etfDays?' (hold '+b.etfDays+'d)':'')+'</div>';
+          if (b.requirements) reqHtml += '<div class="cell-notes" title="'+b.requirements+'">'+b.requirements+'</div>';
+
+          tr.innerHTML =
+            '<td data-label="Bank / Account">'+
+              '<div class="cell-bank">'+b.bank+(b.accountLast4?' <span class="cell-sub">···'+b.accountLast4+'</span>':'')+'</div>'+
+              '<div class="cell-sub">'+b.accountName+'</div>'+
+              (b.sourceUrl ? '<div style="margin-top:3px"><a href="'+b.sourceUrl+'" target="_blank" rel="noopener" class="cell-link">Source ↗</a></div>' : '')+
+            '</td>'+
+            '<td data-label="Person">'+personTag(b.person)+'</td>'+
+            '<td data-label="Status"><span class="pill '+statusPillClass(b.status)+'">'+statusLabel(b.status)+'</span>'+(b.referralBonus ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">+'+currency.format(b.referralBonus)+' ref.</div>' : '')+'</td>'+
+            '<td data-label="Bonus"><span style="font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--accent)">'+currency.format(b.bonusAmount||0)+'</span>'+(b.monthlyFee ? '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Fee: '+currency.format(b.monthlyFee)+'/mo</div>' : '')+'</td>'+
+            '<td data-label="Key Dates" style="font-size:12px">'+(datesHtml||'—')+'</td>'+
+            '<td data-label="Requirements">'+(reqHtml||'<span style="color:var(--text-dim)">—</span>')+'</td>'+
+            '<td data-label="Actions"><div style="display:flex;gap:4px;flex-wrap:wrap;">'+
+              '<button type="button" class="btn-secondary btn-sm" data-edit="'+b.id+'">Edit</button>'+
+              '<button type="button" class="btn-danger btn-sm" data-delete="'+b.id+'">Del</button>'+
+            '</div></td>';
+          tbody.appendChild(tr);
+        });
+      });
+    }
 
     tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openEdit(btn.dataset.edit)));
     tbody.querySelectorAll('[data-delete]').forEach(btn => btn.addEventListener('click', () => deleteBonus(btn.dataset.delete)));
+
+    // Render closed section separately (hidden by default)
+    renderClosedSection();
   }
 
+  // ── Closed Section (hidden until toggled) ─────────────────────────────
+  function renderClosedSection() {
+    const pf = state.personFilter;
+    const st = (el('search-text').value || '').toLowerCase();
+    const closed = state.bonuses.filter(b => {
+      if (!isClosedBonus(b)) return false;
+      if (pf !== 'all' && b.person !== pf) return false;
+      if (st) { const h = (b.bank+' '+(b.accountName||'')).toLowerCase(); if (!h.includes(st)) return false; }
+      return true;
+    });
+
+    const toggleRow = el('closed-toggle-row');
+    const section   = el('closed-section');
+    const tbody     = el('closed-rows');
+
+    if (closed.length === 0) { toggleRow.style.display = 'none'; section.style.display = 'none'; return; }
+
+    toggleRow.style.display = '';
+    el('closed-toggle-label').textContent = closedSectionOpen
+      ? 'Hide '+closed.length+' closed bonus'+(closed.length!==1?'es':'')
+      : 'Show '+closed.length+' closed bonus'+(closed.length!==1?'es':'');
+
+    if (!closedSectionOpen) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    tbody.innerHTML = '';
+
+    // Group by bank
+    const groups = {};
+    closed.forEach(b => { if (!groups[b.bank]) groups[b.bank] = []; groups[b.bank].push(b); });
+    Object.keys(groups).sort().forEach(bank => {
+      groups[bank].sort((a,b) => (parseDate(b.dateClosed)||0) - (parseDate(a.dateClosed)||0)).forEach(b => {
+        const next = computeNextEligible(b);
+        const rr   = isRepeatReady(b);
+        const tr   = document.createElement('tr');
+        tr.style.opacity = '0.65';
+        tr.innerHTML =
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px;">'+
+            '<div style="font-weight:600;color:var(--text)">'+b.bank+'</div>'+
+            '<div class="cell-sub">'+b.accountName+'</div>'+
+          '</td>'+
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);">'+personTag(b.person)+'</td>'+
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:12px;color:var(--accent)">'+currency.format(b.bonusAmount||0)+'</td>'+
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">'+fmtDate(parseDate(b.dateClosed))+'</td>'+
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:11px;">'+(next ? fmtDate(next)+' '+(rr?'<span class="tag tag-repeat-ready">Ready!</span>':'') : '—')+'</td>'+
+          '<td style="padding:7px 12px;border-bottom:1px solid var(--border);"><div style="display:flex;gap:4px;">'+
+            '<button class="btn-primary btn-sm" data-rechurn="'+b.id+'">🔁 Rechurn</button>'+
+            '<button class="btn-secondary btn-sm" data-edit="'+b.id+'">Edit</button>'+
+          '</div></td>';
+        tbody.appendChild(tr);
+      });
+    });
+
+    tbody.querySelectorAll('[data-rechurn]').forEach(btn => btn.addEventListener('click', () => openRechurn(btn.dataset.rechurn)));
+    tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openEdit(btn.dataset.edit)));
+  }
+
+  // ── History / Timeline Tab ─────────────────────────────────────────────
+  function renderHistory() {
+    // All bonuses that have a bonus posted date — the "completed" record
+    const completed = state.bonuses.filter(b => b.dateBonusPosted)
+      .sort((a,b) => (parseDate(b.dateBonusPosted)||0) - (parseDate(a.dateBonusPosted)||0));
+
+    // Year pills
+    const years = [...new Set(completed.map(b => fmtYear(b.dateBonusPosted)).filter(Boolean))].sort((a,b)=>b-a);
+    const pillsEl = el('history-year-pills');
+    pillsEl.innerHTML = ['all', ...years].map(y =>
+      '<button class="person-tab'+(historyYearFilter==y?' active':'')+'" data-year="'+y+'">'+(y==='all'?'All Years':y)+'</button>'
+    ).join('');
+    pillsEl.querySelectorAll('[data-year]').forEach(btn => btn.addEventListener('click', () => {
+      historyYearFilter = btn.dataset.year;
+      renderHistory();
+    }));
+
+    const filtered = historyYearFilter === 'all' ? completed : completed.filter(b => fmtYear(b.dateBonusPosted) == historyYearFilter);
+    el('history-count-tag').textContent = filtered.length + ' bonus' + (filtered.length!==1?'es':'');
+
+    const container = el('history-bank-groups');
+    const emptyEl   = el('history-empty');
+
+    if (filtered.length === 0) { container.innerHTML = ''; emptyEl.style.display = ''; return; }
+    emptyEl.style.display = 'none';
+
+    // Group by bank for history too
+    const groups = {};
+    filtered.forEach(b => { if (!groups[b.bank]) groups[b.bank] = []; groups[b.bank].push(b); });
+
+    container.innerHTML = Object.keys(groups).sort().map(bank => {
+      const bonuses = groups[bank];
+      const total   = bonuses.reduce((s,b) => s+(parseFloat(b.bonusAmount)||0), 0);
+      const rows    = bonuses.map(b => {
+        const next = computeNextEligible(b);
+        const rr   = isRepeatReady(b);
+        return '<div class="history-row">'+
+          '<div class="history-row-main">'+
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+              personTag(b.person)+
+              '<span style="font-family:var(--font-mono);font-weight:600;color:var(--accent)">'+currency.format(b.bonusAmount||0)+'</span>'+
+              (b.referralBonus ? '<span style="font-size:10px;color:var(--text-muted)">+'+currency.format(b.referralBonus)+' ref.</span>' : '')+
+              '<span class="pill '+statusPillClass(b.status)+'">'+statusLabel(b.status)+'</span>'+
+            '</div>'+
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;">'+
+              (b.dateOpened ? '<span>Opened '+fmtDate(parseDate(b.dateOpened))+'</span>' : '')+
+              (b.dateBonusPosted ? '<span>Posted '+fmtDate(parseDate(b.dateBonusPosted))+'</span>' : '')+
+              (b.dateClosed ? '<span>Closed '+fmtDate(parseDate(b.dateClosed))+'</span>' : '')+
+              (next ? '<span>Repeat eligible '+fmtDate(next)+(rr?' <span class="tag tag-repeat-ready">Now!</span>':'')+'</span>' : '')+
+            '</div>'+
+            (b.requirements ? '<div style="font-size:11px;color:var(--text-muted);margin-top:3px;font-style:italic">'+b.requirements+'</div>' : '')+
+          '</div>'+
+          '<div style="display:flex;gap:6px;align-items:flex-start;flex-shrink:0;">'+
+            '<button class="btn-primary btn-sm" data-rechurn="'+b.id+'">🔁 Rechurn</button>'+
+            '<button class="btn-secondary btn-sm" data-edit="'+b.id+'">Edit</button>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      return '<div class="history-bank-card">'+
+        '<div class="history-bank-header">'+
+          '<div>'+
+            '<span class="history-bank-name">'+bank+'</span>'+
+            '<span class="churn-badge" style="margin-left:8px;">×'+bonuses.length+' churn'+(bonuses.length!==1?'s':'')+'</span>'+
+          '</div>'+
+          '<span style="font-family:var(--font-mono);font-size:13px;color:var(--accent)">'+currency.format(total)+' total</span>'+
+        '</div>'+
+        rows+
+      '</div>';
+    }).join('');
+
+    container.querySelectorAll('[data-rechurn]').forEach(btn => btn.addEventListener('click', () => openRechurn(btn.dataset.rechurn)));
+    container.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openEdit(btn.dataset.edit)));
+  }
+
+  // ── Reminders ──────────────────────────────────────────────────────────
   function renderReminders() {
-    const list = el('reminders-list');
+    const list  = el('reminders-list');
     const empty = el('reminders-empty');
     const items = [];
     state.bonuses.forEach(b => {
       const dd = parseDate(b.deadline);
       const rd = parseInt(b.remindBeforeDeadlineDays) || 7;
-      if (dd) { const d = daysBetween(today, dd); if (d !== null && d >= 0 && d <= rd) items.push(`⚠️ <strong>${b.bank} – ${b.accountName}</strong>: requirement deadline in ${d} day${d===1?'':'s'} (${fmtDate(dd)})`); }
+      if (dd) { const d = daysBetween(today, dd); if (d !== null && d >= 0 && d <= rd) items.push('⚠️ <strong>'+b.bank+' – '+b.accountName+'</strong>: requirement deadline in '+d+' day'+(d===1?'':'s')+' ('+fmtDate(dd)+')'); }
       const nextEl = computeNextEligible(b);
       const rr = parseInt(b.remindBeforeRepeatDays) || 30;
-      if (nextEl) { const d = daysBetween(today, nextEl); if (d !== null && d >= 0 && d <= rr) items.push(`🔁 <strong>${b.bank} – ${b.accountName}</strong>: eligible to repeat in ${d} day${d===1?'':'s'} (${fmtDate(nextEl)})`); }
+      if (nextEl) { const d = daysBetween(today, nextEl); if (d !== null && d >= 0 && d <= rr) items.push('🔁 <strong>'+b.bank+' – '+b.accountName+'</strong>: eligible to repeat in '+d+' day'+(d===1?'':'s')+' ('+fmtDate(nextEl)+')'); }
       if (b.dateOpened && b.plannedLifeMonths) {
         const op = parseDate(b.dateOpened);
-        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); const rc = parseInt(b.remindBeforeCloseDays)||14; const d = daysBetween(today, pc); if (d !== null && d >= 0 && d <= rc) items.push(`📅 <strong>${b.bank} – ${b.accountName}</strong>: planned close in ${d} day${d===1?'':'s'} (${fmtDate(pc)})`); }
+        if (op) { const pc = addMonths(op, parseInt(b.plannedLifeMonths)); const rc = parseInt(b.remindBeforeCloseDays)||14; const d = daysBetween(today, pc); if (d !== null && d >= 0 && d <= rc) items.push('📅 <strong>'+b.bank+' – '+b.accountName+'</strong>: planned close in '+d+' day'+(d===1?'':'s')+' ('+fmtDate(pc)+')'); }
       }
     });
     if (items.length === 0) { empty.style.display = ''; list.innerHTML = ''; }
-    else { empty.style.display = 'none'; list.innerHTML = items.map(i => `<li>${i}</li>`).join(''); }
+    else { empty.style.display = 'none'; list.innerHTML = items.map(i => '<li>'+i+'</li>').join(''); }
   }
 
-  function renderAll() { renderSummary(); renderPipeline(); renderWeekWidget(); renderTable(); renderReminders(); }
+  function renderAll() {
+    renderSummary(); renderPipeline(); renderWeekWidget();
+    renderRechurnCallout(); renderTable(); renderReminders(); renderHistory();
+  }
 
+  // ── Form fields ────────────────────────────────────────────────────────
   const formFields = [
     'person','bank','accountName','accountLast4','accountHolder','loginLabel',
     'bonusAmount','referralBonus','status','perHousehold',
@@ -1568,14 +2031,25 @@
     'requirements','feeWaiver','eligibilityNotes','sourceUrl','notes'
   ];
 
+  // Fields that carry over when rechuning (terms/requirements — NOT dates or status)
+  const rechurnCarryFields = [
+    'bank','accountName','accountHolder','loginLabel','perHousehold',
+    'bonusAmount','referralBonus',
+    'minBalance','minBalanceDays','ddAmount','ddCount','ddMethods','chexSystems',
+    'monthlyFee','etfAmount','etfDays',
+    'cooldownPreset','cooldownMonths','repeatAnchor','plannedLifeMonths',
+    'remindBeforeDeadlineDays','remindBeforeRepeatDays','remindBeforeCloseDays',
+    'requirements','feeWaiver','eligibilityNotes','sourceUrl'
+  ];
+
   function openAdd() {
     state.editingId = null;
     formTitleEl.textContent = 'Add Bank Bonus';
     saveBtnLabelEl.textContent = 'Add Bonus';
     editingPillEl.style.display = 'none';
+    clonePillEl.style.display = 'none';
     formErrorEl.style.display = 'none';
-    formEl.reset();
-    el('bonus-id').value = '';
+    formEl.reset(); el('bonus-id').value = '';
     formModalEl.style.display = 'flex';
   }
 
@@ -1586,9 +2060,32 @@
     formTitleEl.textContent = 'Edit Bank Bonus';
     saveBtnLabelEl.textContent = 'Save Changes';
     editingPillEl.style.display = '';
+    clonePillEl.style.display = 'none';
     formErrorEl.style.display = 'none';
     el('bonus-id').value = id;
     formFields.forEach(f => { const field = el(f); if (field) field.value = b[f] !== undefined ? b[f] : ''; });
+    formModalEl.style.display = 'flex';
+  }
+
+  // Rechurn: clone an old bonus into a fresh "planned" entry
+  // Carries over all terms/requirements, clears all dates and status
+  function openRechurn(id) {
+    const b = state.bonuses.find(x => x.id === id);
+    if (!b) return;
+    state.editingId = null;
+    formTitleEl.textContent = 'Rechurn — ' + b.bank;
+    saveBtnLabelEl.textContent = 'Add Rechurn Entry';
+    editingPillEl.style.display = 'none';
+    clonePillEl.style.display = '';
+    formErrorEl.style.display = 'none';
+    formEl.reset(); el('bonus-id').value = '';
+    // Copy carry fields
+    rechurnCarryFields.forEach(f => { const field = el(f); if (field && b[f] !== undefined) field.value = b[f]; });
+    // Set fresh status and clear last-4 (new account number)
+    el('status').value = 'planned';
+    el('accountLast4').value = '';
+    // Add a note linking back to previous churn
+    el('notes').value = '[Rechurn of entry from '+fmtDate(parseDate(b.dateClosed || b.dateBonusPosted))+']'+(b.notes ? '\n'+b.notes : '');
     formModalEl.style.display = 'flex';
   }
 
@@ -1600,7 +2097,7 @@
     persistAll(); renderAll();
   }
 
-  formEl.addEventListener('submit', (e) => {
+  formEl.addEventListener('submit', e => {
     e.preventDefault();
     formErrorEl.style.display = 'none';
     const bank = el('bank').value.trim();
@@ -1620,11 +2117,94 @@
 
   function showFormError(msg) { formErrorEl.textContent = msg; formErrorEl.style.display = 'block'; }
 
+  // ── CSV Import ─────────────────────────────────────────────────────────
+  const CSV_COL_MAP = {
+    bank:'bank', account_name:'accountName', account_last4:'accountLast4',
+    person:'person', status:'status', bonus_amount:'bonusAmount', referral_bonus:'referralBonus',
+    date_opened:'dateOpened', date_closed:'dateClosed', date_bonus_posted:'dateBonusPosted',
+    deadline:'deadline', cooldown_months:'cooldownMonths', dd_amount:'ddAmount',
+    dd_count:'ddCount', min_balance:'minBalance', monthly_fee:'monthlyFee',
+    etf_amount:'etfAmount', etf_days:'etfDays', requirements:'requirements',
+    fee_waiver:'feeWaiver', source_url:'sourceUrl', notes:'notes',
+    per_household:'perHousehold', chex_systems:'chexSystems',
+  };
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) throw new Error('Need at least a header row and one data row.');
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_'));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      // Simple CSV split — handles quoted fields
+      const vals = [];
+      let cur = '', inQ = false;
+      for (const ch of lines[i]+',') {
+        if (ch==='"') { inQ=!inQ; }
+        else if (ch===',' && !inQ) { vals.push(cur.trim()); cur=''; }
+        else cur+=ch;
+      }
+      const obj = {};
+      headers.forEach((h, idx) => {
+        const field = CSV_COL_MAP[h];
+        if (field) obj[field] = vals[idx] || '';
+      });
+      if (!obj.bank) throw new Error('Row '+(i+1)+' is missing a bank value.');
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  let csvParsed = [];
+
+  el('csv-preview-btn').addEventListener('click', () => {
+    const raw = el('csv-input').value;
+    el('csv-error').style.display = 'none';
+    el('csv-import-btn').disabled = true;
+    el('csv-preview').innerHTML = '';
+    try {
+      csvParsed = parseCSV(raw);
+      el('csv-preview').innerHTML =
+        '<div style="margin-top:8px;padding:10px 12px;background:var(--accent-dim);border:1px solid rgba(61,220,132,0.2);border-radius:var(--r-sm);font-size:12px;color:var(--accent);">'+
+        '✓ Parsed <strong>'+csvParsed.length+' row'+(csvParsed.length!==1?'s':'')+'</strong>: '+
+        csvParsed.map(r => r.bank+(r.accountName?' / '+r.accountName:'')).join(', ')+
+        '</div>';
+      el('csv-import-btn').disabled = false;
+    } catch(e) {
+      el('csv-error').textContent = e.message; el('csv-error').style.display = 'block';
+    }
+  });
+
+  el('csv-import-btn').addEventListener('click', () => {
+    if (!csvParsed.length) return;
+    const toAdd = csvParsed.map(row => ({
+      id: uid(),
+      person: row.person || 'you',
+      status: row.status || 'closed',
+      cooldownPreset: row.cooldownMonths ? 'custom' : 'custom',
+      repeatAnchor: 'auto',
+      ...row,
+    }));
+    state.bonuses.push(...toAdd);
+    persistAll(); renderAll();
+    el('csv-modal').style.display = 'none';
+    el('csv-input').value = '';
+    el('csv-preview').innerHTML = '';
+    el('csv-import-btn').disabled = true;
+    csvParsed = [];
+    alert('✓ Imported '+toAdd.length+' bonus'+(toAdd.length!==1?'es':'')+' successfully!');
+  });
+
+  el('import-csv-btn').addEventListener('click', () => { el('csv-modal').style.display = 'flex'; });
+  el('close-csv-btn').addEventListener('click', () => { el('csv-modal').style.display = 'none'; });
+  el('csv-cancel-btn').addEventListener('click', () => { el('csv-modal').style.display = 'none'; });
+  el('csv-modal').addEventListener('click', e => { if (e.target === el('csv-modal')) el('csv-modal').style.display = 'none'; });
+
+  // ── Wire up all controls ───────────────────────────────────────────────
   el('reset-btn').addEventListener('click', () => { formEl.reset(); el('bonus-id').value = ''; });
   openFormBtn.addEventListener('click', openAdd);
   closeFormBtn.addEventListener('click', closeModal);
   cancelBtn.addEventListener('click', closeModal);
-  formModalEl.addEventListener('click', (e) => { if (e.target === formModalEl) closeModal(); });
+  formModalEl.addEventListener('click', e => { if (e.target === formModalEl) closeModal(); });
 
   el('person-tabs').querySelectorAll('.person-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -1640,14 +2220,36 @@
   el('drive-connect-btn').addEventListener('click', connectDrive);
   el('drive-save-btn').addEventListener('click', driveSave);
 
+  // Closed section toggle
+  el('closed-toggle-btn').addEventListener('click', () => {
+    closedSectionOpen = !closedSectionOpen;
+    renderClosedSection();
+  });
+
+  // Rechurn callout toggle
+  el('rechurn-toggle').addEventListener('click', () => {
+    rechurnOpen = !rechurnOpen;
+    el('rechurn-list').style.display = rechurnOpen ? '' : 'none';
+    el('rechurn-toggle').textContent = rechurnOpen ? 'Hide ▴' : 'Show ▾';
+  });
+
+  // Tab switching
+  el('tab-nav').querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el('tab-nav').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      el('tab-dashboard').style.display = btn.dataset.tab === 'dashboard' ? '' : 'none';
+      el('tab-history').style.display   = btn.dataset.tab === 'history'   ? '' : 'none';
+    });
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────────
   loadLocal();
-  // Restore cached Drive IDs so returning users skip re-discovery
-  driveFileId   = localStorage.getItem(DRIVE_FILE_ID_KEY)   || null;
-  driveFolderId = localStorage.getItem(DRIVE_FOLDER_ID_KEY) || null;
+  driveFileId    = localStorage.getItem(DRIVE_FILE_ID_KEY)    || null;
+  driveFolderId  = localStorage.getItem(DRIVE_FOLDER_ID_KEY)  || null;
+  drivePointerId = localStorage.getItem(DRIVE_POINTER_ID_KEY) || null;
   renderAll();
-
   if (state.bonuses.length > 0) openFormBtn.disabled = false;
-
   window.addEventListener('DOMContentLoaded', () => { maybeEnableDriveButtons(); });
 })();
 </script>

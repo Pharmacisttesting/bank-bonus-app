@@ -24,23 +24,77 @@
 
     function gapiLoaded() {
       gapi.load('client', async () => {
-        await gapi.client.init({ apiKey: GOOGLE_API_KEY, discoveryDocs: [GOOGLE_DISCOVERY_DOC] });
-        gapiInited = true;
+        try {
+          await gapi.client.init({ apiKey: GOOGLE_API_KEY, discoveryDocs: [GOOGLE_DISCOVERY_DOC] });
+          gapiInited = true;
+        } catch(e) {
+          console.error('[Drive] gapi.client.init failed:', e);
+          const dNote = document.getElementById('diag-note');
+          if (dNote) { dNote.style.display=''; dNote.textContent='❌ gapi init error: '+e.message; }
+        }
         maybeEnableDriveButtons();
       });
     }
     function gisLoaded() {
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: GOOGLE_SCOPES,
-        callback: '',
-      });
-      gisInited = true;
+      try {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: GOOGLE_SCOPES,
+          callback: '',
+        });
+        gisInited = true;
+      } catch(e) {
+        console.error('[Drive] GIS init failed:', e);
+        const dNote = document.getElementById('diag-note');
+        if (dNote) { dNote.style.display=''; dNote.textContent='❌ GIS init error: '+e.message; }
+      }
       maybeEnableDriveButtons();
     }
+    function updateDiagnostics() {
+      const dGapi   = document.getElementById('diag-gapi');
+      const dGis    = document.getElementById('diag-gis');
+      const dOrigin = document.getElementById('diag-origin');
+      const dOval   = document.getElementById('diag-origin-val');
+      const dNote   = document.getElementById('diag-note');
+      if (!dGapi) return; // DOM not ready yet
+
+      if (dGapi)   dGapi.textContent   = gapiInited ? '✅' : '⏳';
+      if (dGis)    dGis.textContent    = gisInited  ? '✅' : '⏳';
+
+      const origin = window.location.origin;
+      if (dOval)   dOval.textContent   = origin;
+
+      // Warn if running from file:// — OAuth will not work
+      if (origin === 'null' || origin === 'file://' || origin.startsWith('file')) {
+        if (dOrigin) dOrigin.textContent = '❌';
+        if (dNote) {
+          dNote.style.display = '';
+          dNote.innerHTML = '⚠ Running from a local file (file://) — Google OAuth will be blocked.<br>' +
+            'Host this file on a web server or open via Live Server / localhost.<br>' +
+            'Also make sure <strong>' + origin + '</strong> is in your Google Cloud Console → OAuth → Authorised origins.';
+        }
+      } else {
+        if (dOrigin) dOrigin.textContent = '✅';
+        if (dNote && gapiInited && gisInited) dNote.style.display = 'none';
+      }
+    }
+
     function maybeEnableDriveButtons() {
+      updateDiagnostics();
+      // Both APIs must be ready AND the DOM must be painted
+      if (!gapiInited || !gisInited) return;
       const btn = document.getElementById('drive-connect-btn');
-      if (btn && gapiInited && gisInited) btn.disabled = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.title = '';
+        const statusEl = document.getElementById('drive-status');
+        if (statusEl && statusEl.textContent.includes('Loading')) {
+          statusEl.textContent = 'Ready — click Connect Drive to sync.';
+        }
+      } else {
+        // DOM not ready yet — retry until the button exists
+        setTimeout(maybeEnableDriveButtons, 100);
+      }
     }
 
     // ── Drive helpers ────────────────────────────────────────────────────────
@@ -75,8 +129,7 @@
         '--' + boundary, 'Content-Type: text/plain', '',
         text,
         '--' + boundary + '--',
-      ].join('
-');
+      ].join('\r\n');
       const url = existingFileId
         ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart`
         : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
@@ -1194,11 +1247,18 @@
       <div class="panel-header">
         <span class="panel-title">Backup &amp; Google Drive</span>
       </div>
-      <p class="helper-text">Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync. On connect, existing Drive data loads automatically.</p>
+      <p class="helper-text">Auto‑saves in this browser. Connect Google Drive once and changes will auto‑sync.</p>
       <div class="drive-section">
-        <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled>Connect Drive</button>
+        <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled title="Waiting for Google APIs to load…">Connect Drive</button>
         <button type="button" class="btn-secondary btn-sm" id="drive-save-btn" disabled>Save to Drive</button>
-        <span class="drive-status" id="drive-status">Not connected.</span>
+        <span class="drive-status" id="drive-status">⏳ Loading Google APIs…</span>
+      </div>
+      <!-- Live diagnostic — shows exactly why the button is grey -->
+      <div id="drive-diag" style="margin-top:10px; padding:10px 12px; background:var(--surface-3); border:1px solid var(--border); border-radius:var(--r-sm); font-family:var(--font-mono); font-size:10px; line-height:1.8; color:var(--text-muted);">
+        <div><span id="diag-gapi">⏳</span> Google API (gapi) loaded</div>
+        <div><span id="diag-gis">⏳</span> Google Identity Services (GIS) loaded</div>
+        <div><span id="diag-origin">⏳</span> Origin: <span id="diag-origin-val"></span></div>
+        <div id="diag-note" style="margin-top:6px; color:var(--amber); display:none;"></div>
       </div>
     </div>
 
@@ -1464,15 +1524,38 @@
         Paste a CSV with your existing bonuses. Only <strong>bank</strong> and <strong>bonus_amount</strong> are required.
         All other columns are optional — leave them blank and the app fills in defaults.
       </p>
-      <div style="background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:12px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);line-height:1.7;">
-        <strong style="color:var(--accent);">Supported columns (any order, header row required):</strong><br>
-        bank, account_name, account_last4, person, status, bonus_amount, referral_bonus,<br>
-        date_opened, date_closed, date_bonus_posted, deadline, cooldown_months,<br>
-        dd_amount, dd_count, min_balance, monthly_fee, etf_amount, etf_days,<br>
-        requirements, fee_waiver, source_url, notes, per_household, chex_systems
+      <!-- Format tabs -->
+      <div style="display:flex;gap:6px;margin-bottom:10px;" id="csv-format-tabs">
+        <button class="person-tab active" data-fmt="sheet">My Spreadsheet Format</button>
+        <button class="person-tab" data-fmt="generic">Generic Format</button>
       </div>
-      <label for="csv-input">Paste CSV here</label>
-      <textarea id="csv-input" style="min-height:160px;font-family:var(--font-mono);font-size:11px;" placeholder="bank,account_name,bonus_amount,status,date_opened,date_closed&#10;Chase,Total Checking,300,closed,2023-01-15,2023-08-01&#10;BMO,Smart Advantage,400,closed,2023-03-01,2023-09-15"></textarea>
+
+      <div id="csv-fmt-sheet">
+        <div style="background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);line-height:1.8;">
+          <strong style="color:var(--accent);">Export your Google Sheet as CSV, paste below.</strong><br>
+          Expected columns (your exact headers, in any order):<br>
+          <span style="color:var(--text);">bank, person, type, doc link, avoid fee, open date,</span><br>
+          <span style="color:var(--text);">expected bonus 2026, last inquiry date, bonus req,</span><br>
+          <span style="color:var(--text);">req met, req missing, next step, bonus date, close,</span><br>
+          <span style="color:var(--text);">anticipate d/earliest, addition comment, tax</span><br><br>
+          <strong style="color:var(--amber);">Tips:</strong> Leave merged bank cells as-is (blank rows carry forward the last bank).
+          Person names like <em>Ishan → You</em>, <em>Heli → Spouse</em> are auto-mapped.
+          Dates like <em>03/08/2024</em> and amounts like <em>50k-06/30/2024</em> or <em>avg $500</em> are auto-parsed.
+        </div>
+        <label for="csv-input">Paste your exported CSV here</label>
+        <textarea id="csv-input" style="min-height:160px;font-family:var(--font-mono);font-size:11px;" placeholder="bank,person,type,open date,bonus req,req met,bonus date,close,anticipate d/earliest,addition comment&#10;Citi Brokerage,Ishan,Brokerage,03/08/2024,50k-06/30/2024,done,,still open zero,&#10;,Heli,Brokerage,03/15/2024,50k-06/30/2024,done,,still open zero,"></textarea>
+      </div>
+
+      <div id="csv-fmt-generic" style="display:none;">
+        <div style="background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);line-height:1.8;">
+          <strong style="color:var(--accent);">Standard column names (any order, header row required):</strong><br>
+          bank, account_name, account_last4, person, status, bonus_amount,<br>
+          date_opened, date_closed, date_bonus_posted, deadline, cooldown_months,<br>
+          dd_amount, dd_count, min_balance, monthly_fee, etf_amount, etf_days,<br>
+          requirements, fee_waiver, source_url, notes, per_household, chex_systems
+        </div>
+        <label for="csv-input">Paste CSV here</label>
+      </div>
       <div id="csv-preview" style="margin-top:10px;"></div>
       <div class="actions-row">
         <button type="button" class="btn-ghost btn-sm" id="csv-cancel-btn">Cancel</button>
@@ -2117,40 +2200,258 @@
 
   function showFormError(msg) { formErrorEl.textContent = msg; formErrorEl.style.display = 'block'; }
 
-  // ── CSV Import ─────────────────────────────────────────────────────────
-  const CSV_COL_MAP = {
-    bank:'bank', account_name:'accountName', account_last4:'accountLast4',
-    person:'person', status:'status', bonus_amount:'bonusAmount', referral_bonus:'referralBonus',
-    date_opened:'dateOpened', date_closed:'dateClosed', date_bonus_posted:'dateBonusPosted',
-    deadline:'deadline', cooldown_months:'cooldownMonths', dd_amount:'ddAmount',
-    dd_count:'ddCount', min_balance:'minBalance', monthly_fee:'monthlyFee',
-    etf_amount:'etfAmount', etf_days:'etfDays', requirements:'requirements',
-    fee_waiver:'feeWaiver', source_url:'sourceUrl', notes:'notes',
-    per_household:'perHousehold', chex_systems:'chexSystems',
+  // ── CSV Import — supports both your old spreadsheet format AND generic format ──
+  //
+  // YOUR SPREADSHEET COLUMNS (from the screenshot):
+  //   bank | person | type | doc link | avoid fee | open date | expected bonus 2026
+  //   last inquiry date | bonus req | req met | req missing | next step
+  //   bonus date | close | anticipate d/earliest | addition comment | tax
+  //
+  // The importer recognises your exact column names (case-insensitive, spaces ok)
+  // AND all the standard app column names, so both formats work.
+
+  // Normalize a header string to a lookup key
+  function normHeader(h) {
+    return h.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+  }
+
+  // Your spreadsheet column name → app field name
+  // Covers every column visible in the screenshot plus generic aliases
+  const SHEET_COL_MAP = {
+    // ── Your exact spreadsheet headers ──────────────────────────────
+    'bank':                      'bank',
+    'person':                    'person',
+    'type':                      'accountName',        // Brokerage / Checking
+    'doc_link':                  'sourceUrl',
+    'avoid_fee':                 'feeWaiver',
+    'open_date':                 'dateOpened',
+    'expected_bonus_2026':       'bonusAmount',        // treat as bonus amount
+    'expected_bonus':            'bonusAmount',
+    'last_inquiry_date':         'pullDate',
+    'last_inquiy_date':          'pullDate',           // typo variant in screenshot
+    'bonus_req':                 '_bonusReqRaw',       // parsed specially below
+    'req_met':                   '_reqMet',            // "done" → status
+    'req_missing':               'requirements',
+    'next_step':                 'notes',
+    'bonus_date':                'dateBonusPosted',
+    'close':                     'dateClosed',
+    'anticipate_d_earliest':     'deadline',           // red column = earliest close date
+    'anticipate_dearliest':      'deadline',
+    'addition_comment':          '_comment',           // appended to notes
+    'additional_comment':        '_comment',
+    'tax':                       '_tax',               // stored in notes
+    // ── Generic / standard app column names ─────────────────────────
+    'account_name':              'accountName',
+    'account_last4':             'accountLast4',
+    'status':                    'status',
+    'bonus_amount':              'bonusAmount',
+    'referral_bonus':            'referralBonus',
+    'date_opened':               'dateOpened',
+    'date_closed':               'dateClosed',
+    'date_bonus_posted':         'dateBonusPosted',
+    'deadline':                  'deadline',
+    'cooldown_months':           'cooldownMonths',
+    'dd_amount':                 'ddAmount',
+    'dd_count':                  'ddCount',
+    'dd_methods':                'ddMethods',
+    'min_balance':               'minBalance',
+    'min_balance_days':          'minBalanceDays',
+    'monthly_fee':               'monthlyFee',
+    'etf_amount':                'etfAmount',
+    'etf_days':                  'etfDays',
+    'requirements':              'requirements',
+    'fee_waiver':                'feeWaiver',
+    'source_url':                'sourceUrl',
+    'notes':                     'notes',
+    'per_household':             'perHousehold',
+    'chex_systems':              'chexSystems',
+    'etf_days':                  'etfDays',
   };
 
-  function parseCSV(text) {
-    const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) throw new Error('Need at least a header row and one data row.');
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_'));
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      // Simple CSV split — handles quoted fields
-      const vals = [];
-      let cur = '', inQ = false;
-      for (const ch of lines[i]+',') {
-        if (ch==='"') { inQ=!inQ; }
-        else if (ch===',' && !inQ) { vals.push(cur.trim()); cur=''; }
-        else cur+=ch;
-      }
-      const obj = {};
-      headers.forEach((h, idx) => {
-        const field = CSV_COL_MAP[h];
-        if (field) obj[field] = vals[idx] || '';
-      });
-      if (!obj.bank) throw new Error('Row '+(i+1)+' is missing a bank value.');
-      rows.push(obj);
+  // Parse "50k-06/30/2024" → { ddAmount: 50000, deadline: '2024-06-30' }
+  // Also handles "avg $500", "no min", "no min no fee", plain numbers, etc.
+  function parseBonusReq(raw) {
+    if (!raw) return {};
+    const out = {};
+    const s = raw.trim().toLowerCase();
+
+    // Pattern: 50k-06/30/2024  or  $50000-06/30/2024
+    const amtDateMatch = s.match(/\$?([\d.]+)k?\s*[-–]\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (amtDateMatch) {
+      let amt = parseFloat(amtDateMatch[1]);
+      if (s.includes('k')) amt *= 1000;
+      out.ddAmount = String(amt);
+      // Build YYYY-MM-DD
+      let yr = amtDateMatch[4];
+      if (yr.length === 2) yr = '20' + yr;
+      const mo = amtDateMatch[2].padStart(2,'0');
+      const dy = amtDateMatch[3].padStart(2,'0');
+      out.deadline = yr + '-' + mo + '-' + dy;
+      return out;
     }
+
+    // Pattern: avg $500
+    const avgMatch = s.match(/avg\s*\$?([\d,]+)/);
+    if (avgMatch) {
+      out.ddAmount = String(parseFloat(avgMatch[1].replace(/,/g,'')));
+      return out;
+    }
+
+    // Pattern: $500 or 500
+    const plainAmt = s.match(/^\$?([\d,]+\.?\d*)$/);
+    if (plainAmt) {
+      out.ddAmount = String(parseFloat(plainAmt[1].replace(/,/g,'')));
+      return out;
+    }
+
+    // "no min" / "no min no fee" → store as feeWaiver note
+    if (s.includes('no min')) {
+      out.feeWaiver = raw;
+      return out;
+    }
+
+    // Anything else — put in requirements text
+    out.requirements = raw;
+    return out;
+  }
+
+  // Infer status from your spreadsheet signals
+  function inferStatus(row) {
+    // Explicit status column wins
+    if (row.status && row.status !== '') return row.status.toLowerCase().replace(/\s+/g,'_');
+
+    const reqMet  = (row._reqMet  || '').toLowerCase().trim();
+    const closed  = (row.dateClosed || '').trim();
+    const posted  = (row.dateBonusPosted || '').trim();
+    const comment = (row._comment || '').toLowerCase();
+    const notes   = (row.notes || '').toLowerCase();
+
+    if (closed && closed !== '' && closed !== 'na' && closed !== 'n/a') return 'closed';
+    if (posted && posted !== '' && posted !== 'na') return 'bonus_posted';
+    if (reqMet === 'done') return 'requirements_met';
+    if (comment.includes('still open') || notes.includes('still open')) return 'in_progress';
+    return 'in_progress';
+  }
+
+  // Normalise a person name from your sheet (Ishan → you, Heli → spouse, etc.)
+  // Users can customise the mapping here
+  function normPerson(raw) {
+    if (!raw) return 'you';
+    const s = raw.trim().toLowerCase();
+    // Common patterns — add your own names here
+    if (s === 'ishan' || s === 'me' || s === 'self' || s === 'you') return 'you';
+    if (s === 'heli' || s === 'spouse' || s === 'wife' || s === 'husband') return 'spouse';
+    if (s === 'joint' || s === 'both') return 'joint';
+    return 'you'; // default
+  }
+
+  // Normalise a date string to YYYY-MM-DD (handles MM/DD/YYYY, M/D/YY, etc.)
+  function normDate(raw) {
+    if (!raw || raw.trim() === '' || raw.toLowerCase() === 'na' || raw.toLowerCase() === 'n/a') return '';
+    const s = raw.trim();
+    // Already ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // MM/DD/YYYY or M/D/YYYY or M/D/YY
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) {
+      let yr = m[3]; if (yr.length === 2) yr = '20' + yr;
+      return yr + '-' + m[1].padStart(2,'0') + '-' + m[2].padStart(2,'0');
+    }
+    return s; // return as-is and let the app handle it
+  }
+
+  // Normalise a dollar amount string → plain number string
+  function normAmt(raw) {
+    if (!raw || raw.trim() === '' || raw.toLowerCase() === 'na') return '';
+    const cleaned = raw.replace(/[$,\s]/g,'');
+    const n = parseFloat(cleaned);
+    return isNaN(n) ? '' : String(n);
+  }
+
+  // Split CSV text into rows of values, respecting quoted fields
+  function splitCSVLine(line) {
+    const vals = [];
+    let cur = '', inQ = false;
+    for (const ch of line + ',') {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    return vals;
+  }
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n').map(l => l.trimEnd()).filter(Boolean);
+    if (lines.length < 2) throw new Error('Need at least a header row and one data row.');
+
+    const rawHeaders = splitCSVLine(lines[0]);
+    const headers    = rawHeaders.map(normHeader);
+
+    // Detect if this looks like your spreadsheet format (has 'bonus_req' or 'req_met')
+    const isSheetFormat = headers.some(h => h === 'bonus_req' || h === 'req_met' || h === 'open_date' || h === 'avoid_fee');
+
+    const rows = [];
+    let lastBank = '';
+
+    for (let i = 1; i < lines.length; i++) {
+      const vals = splitCSVLine(lines[i]);
+      if (vals.every(v => v === '')) continue; // skip blank rows
+
+      // Build raw field object using SHEET_COL_MAP
+      const raw = {};
+      headers.forEach((h, idx) => {
+        const field = SHEET_COL_MAP[h];
+        if (field) raw[field] = (vals[idx] || '').trim();
+      });
+
+      // Handle merged bank cells: if bank is empty, carry forward the last seen bank
+      if (!raw.bank || raw.bank === '') raw.bank = lastBank;
+      else lastBank = raw.bank;
+
+      if (!raw.bank) continue; // truly no bank — skip
+
+      // ── Normalise fields ──────────────────────────────────────────
+      raw.person = normPerson(raw.person);
+
+      // Dates
+      ['dateOpened','dateClosed','dateBonusPosted','deadline','pullDate','offerExpiration'].forEach(f => {
+        if (raw[f]) raw[f] = normDate(raw[f]);
+      });
+
+      // Dollar amounts
+      ['bonusAmount','referralBonus','ddAmount','minBalance','monthlyFee','etfAmount'].forEach(f => {
+        if (raw[f]) raw[f] = normAmt(raw[f]);
+      });
+
+      // Parse the special bonus_req column from your sheet
+      if (raw._bonusReqRaw) {
+        const parsed = parseBonusReq(raw._bonusReqRaw);
+        // Only fill in fields that aren't already set
+        Object.entries(parsed).forEach(([k,v]) => { if (!raw[k] && v) raw[k] = v; });
+        delete raw._bonusReqRaw;
+      }
+
+      // Merge _comment into notes
+      const commentParts = [];
+      if (raw._comment && raw._comment !== '') commentParts.push(raw._comment);
+      if (raw._tax     && raw._tax     !== '') commentParts.push('Tax: ' + raw._tax);
+      if (raw.notes    && raw.notes    !== '') commentParts.unshift(raw.notes);
+      raw.notes = commentParts.join(' | ');
+      delete raw._comment; delete raw._tax; delete raw._reqMet;
+
+      // accountName defaults to "type" column value if set, else bank name
+      if (!raw.accountName || raw.accountName === '') raw.accountName = raw.bank + ' Account';
+
+      // Infer status
+      raw.status = inferStatus(raw);
+
+      // Clean up empty strings so they don't overwrite defaults
+      Object.keys(raw).forEach(k => { if (raw[k] === '' || raw[k] === 'NA' || raw[k] === 'N/A') raw[k] = ''; });
+
+      rows.push(raw);
+    }
+
+    if (rows.length === 0) throw new Error('No data rows found after the header.');
     return rows;
   }
 
@@ -2163,11 +2464,23 @@
     el('csv-preview').innerHTML = '';
     try {
       csvParsed = parseCSV(raw);
+
+      // Build a preview table
+      const cols = ['bank','person','accountName','status','bonusAmount','dateOpened','dateClosed','dateBonusPosted','deadline','ddAmount','notes'];
+      const thead = cols.map(c => '<th style="padding:4px 8px;text-align:left;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);">'+c+'</th>').join('');
+      const tbody = csvParsed.map(r =>
+        '<tr>'+ cols.map(c => '<td style="padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(r[c]||'—')+'</td>').join('') +'</tr>'
+      ).join('');
+
       el('csv-preview').innerHTML =
-        '<div style="margin-top:8px;padding:10px 12px;background:var(--accent-dim);border:1px solid rgba(61,220,132,0.2);border-radius:var(--r-sm);font-size:12px;color:var(--accent);">'+
-        '✓ Parsed <strong>'+csvParsed.length+' row'+(csvParsed.length!==1?'s':'')+'</strong>: '+
-        csvParsed.map(r => r.bank+(r.accountName?' / '+r.accountName:'')).join(', ')+
-        '</div>';
+        '<div style="margin-top:10px;">'+
+        '<div style="padding:8px 12px;background:var(--accent-dim);border:1px solid rgba(61,220,132,0.2);border-radius:var(--r-sm) var(--r-sm) 0 0;font-size:12px;color:var(--accent);">'+
+          '✓ Parsed <strong>'+csvParsed.length+' row'+(csvParsed.length!==1?'s':'')+'</strong> — scroll right to see all columns'+
+        '</div>'+
+        '<div style="overflow-x:auto;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r-sm) var(--r-sm);">'+
+          '<table style="border-collapse:collapse;width:100%;background:var(--surface);"><thead><tr>'+thead+'</tr></thead><tbody>'+tbody+'</tbody></table>'+
+        '</div></div>';
+
       el('csv-import-btn').disabled = false;
     } catch(e) {
       el('csv-error').textContent = e.message; el('csv-error').style.display = 'block';
@@ -2177,24 +2490,40 @@
   el('csv-import-btn').addEventListener('click', () => {
     if (!csvParsed.length) return;
     const toAdd = csvParsed.map(row => ({
-      id: uid(),
-      person: row.person || 'you',
-      status: row.status || 'closed',
       cooldownPreset: row.cooldownMonths ? 'custom' : 'custom',
       repeatAnchor: 'auto',
       ...row,
+      id: uid(),   // always fresh ID
     }));
-    state.bonuses.push(...toAdd);
+    // Deduplicate: skip rows whose bank+accountName+dateOpened already exist
+    const existingKeys = new Set(state.bonuses.map(b => b.bank+'|'+(b.accountName||'')+'|'+(b.dateOpened||'')));
+    const fresh    = toAdd.filter(b => !existingKeys.has(b.bank+'|'+(b.accountName||'')+'|'+(b.dateOpened||'')));
+    const skipped  = toAdd.length - fresh.length;
+
+    state.bonuses.push(...fresh);
     persistAll(); renderAll();
     el('csv-modal').style.display = 'none';
     el('csv-input').value = '';
     el('csv-preview').innerHTML = '';
     el('csv-import-btn').disabled = true;
     csvParsed = [];
-    alert('✓ Imported '+toAdd.length+' bonus'+(toAdd.length!==1?'es':'')+' successfully!');
+
+    let msg = '✓ Imported ' + fresh.length + ' bonus' + (fresh.length!==1?'es':'') + ' successfully!';
+    if (skipped > 0) msg += '\n(' + skipped + ' row' + (skipped!==1?'s':'') + ' skipped — already existed)';
+    alert(msg);
   });
 
   el('import-csv-btn').addEventListener('click', () => { el('csv-modal').style.display = 'flex'; });
+
+  // CSV format tab switcher
+  document.getElementById('csv-format-tabs').querySelectorAll('.person-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('csv-format-tabs').querySelectorAll('.person-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      el('csv-fmt-sheet').style.display   = btn.dataset.fmt === 'sheet'   ? '' : 'none';
+      el('csv-fmt-generic').style.display = btn.dataset.fmt === 'generic' ? '' : 'none';
+    });
+  });
   el('close-csv-btn').addEventListener('click', () => { el('csv-modal').style.display = 'none'; });
   el('csv-cancel-btn').addEventListener('click', () => { el('csv-modal').style.display = 'none'; });
   el('csv-modal').addEventListener('click', e => { if (e.target === el('csv-modal')) el('csv-modal').style.display = 'none'; });
@@ -2250,7 +2579,9 @@
   drivePointerId = localStorage.getItem(DRIVE_POINTER_ID_KEY) || null;
   renderAll();
   if (state.bonuses.length > 0) openFormBtn.disabled = false;
-  window.addEventListener('DOMContentLoaded', () => { maybeEnableDriveButtons(); });
+  // maybeEnableDriveButtons is called by gapiLoaded/gisLoaded when APIs are ready.
+  // No DOMContentLoaded listener needed — the polling retry in maybeEnableDriveButtons
+  // handles the case where the button isn't in the DOM yet when the APIs fire.
 })();
 </script>
 </body>

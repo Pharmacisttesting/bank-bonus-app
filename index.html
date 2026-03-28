@@ -1011,7 +1011,7 @@
   <div class="tab-nav" id="tab-nav" style="align-items:center;">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="history">History &amp; Timeline</button>
-    <button type="button" onclick="logoutAndClear()" title="Disconnect Drive &amp; clear all local data" style="margin-left:auto;margin-bottom:1px;background:transparent;color:var(--red);border:1px solid var(--red-dim);padding:5px 13px;border-radius:var(--r-sm);cursor:pointer;font-size:12px;font-family:var(--font-mono);letter-spacing:.04em;transition:all var(--transition);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">⏻ Logout</button>
+    <button type="button" id="logout-open-btn" title="Disconnect Drive &amp; clear all local data" style="margin-left:auto;margin-bottom:1px;background:transparent;color:var(--red);border:1px solid var(--red-dim);padding:5px 13px;border-radius:var(--r-sm);cursor:pointer;font-size:12px;font-family:var(--font-mono);letter-spacing:.04em;transition:all var(--transition);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">⏻ Logout</button>
   </div>
 
   <!-- ══ DASHBOARD TAB ══════════════════════════════════════════════ -->
@@ -1187,7 +1187,7 @@
         <span class="drive-status" id="drive-status">⏳ Loading Google APIs…</span>
       </div>
       <div style="margin-top:10px;">
-        <button type="button" onclick="logoutAndClear()" style="background:transparent;color:var(--red);border:1px solid var(--red-dim);padding:6px 14px;border-radius:var(--r-sm);cursor:pointer;font-size:12px;font-family:var(--font-mono);letter-spacing:.04em;transition:all var(--transition);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">⏻ Logout &amp; Clear All Data</button>
+        <button type="button" class="btn-danger btn-sm" id="logout-open-btn-2">⏻ Logout &amp; Clear All Data</button>
         <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Disconnects Google Drive and removes all data from this browser.</div>
       </div>
       <!-- Live diagnostic — shows exactly why the button is grey -->
@@ -1500,6 +1500,38 @@
         <button type="button" class="btn-primary btn-sm" id="csv-import-btn" disabled>Import All</button>
       </div>
       <div id="csv-error" class="error-text" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOGOUT CONFIRM MODAL ════════════════════════════════════════════ -->
+<div id="logout-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-lg);padding:28px 28px 24px;max-width:380px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(255,94,94,0.08);animation:fadeIn .18s ease both;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:20px;line-height:1;">⏻</span>
+      <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--red);letter-spacing:.04em;">LOGOUT &amp; CLEAR DATA</span>
+    </div>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:6px;">This will <strong style="color:var(--red);">permanently delete</strong> all bonus data stored in this browser and disconnect Google Drive.</p>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:22px;">Your Drive file is unaffected — you can reconnect and reload from Drive anytime.</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button type="button" class="btn-ghost btn-sm" id="logout-cancel-btn">Cancel</button>
+      <button type="button" class="btn-danger btn-sm" id="logout-confirm-btn" style="padding:6px 16px;">⏻ Yes, logout &amp; clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DELETE BONUS CONFIRM MODAL ══════════════════════════════════════ -->
+<div id="delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-lg);padding:28px 28px 24px;max-width:360px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,0.6),0 0 0 1px rgba(255,94,94,0.08);animation:fadeIn .18s ease both;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:18px;line-height:1;">🗑</span>
+      <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--red);letter-spacing:.04em;">DELETE ENTRY</span>
+    </div>
+    <p style="font-size:13px;color:var(--text);line-height:1.6;margin-bottom:4px;">Delete this bonus entry?</p>
+    <p style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:22px;" id="delete-modal-label"></p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button type="button" class="btn-ghost btn-sm" id="delete-cancel-btn">Cancel</button>
+      <button type="button" class="btn-danger btn-sm" id="delete-confirm-btn" style="padding:6px 16px;">Delete</button>
     </div>
   </div>
 </div>
@@ -2129,9 +2161,15 @@
   function closeModal() { formModalEl.style.display = 'none'; state.editingId = null; }
 
   function deleteBonus(id) {
-    if (!confirm('Delete this bonus entry?')) return;
-    state.bonuses = state.bonuses.filter(b => b.id !== id);
-    persistAll(); renderAll();
+    const bonus = state.bonuses.find(b => b.id === id);
+    const label = bonus ? (bonus.bank + (bonus.accountName ? ' — ' + bonus.accountName : '')) : 'this entry';
+    el('delete-modal-label').textContent = label;
+    el('delete-modal').style.display = 'flex';
+    el('delete-confirm-btn').onclick = () => {
+      el('delete-modal').style.display = 'none';
+      state.bonuses = state.bonuses.filter(b => b.id !== id);
+      persistAll(); renderAll();
+    };
   }
 
   formEl.addEventListener('submit', e => {
@@ -2526,32 +2564,29 @@
     });
   });
 
-  // ── Logout & Clear ────────────────────────────────────────────────────
-  window.logoutAndClear = function() {
-    if (!confirm('Disconnect Drive and delete all local data?\n\nThis cannot be undone.')) return;
-
-    // Revoke Google OAuth token if one is active
+  // ── Logout modal ──────────────────────────────────────────────────────
+  function doLogout() {
     try {
       const token = gapi?.client?.getToken?.();
-      if (token && typeof google !== 'undefined' && google.accounts?.oauth2) {
+      if (token && typeof google !== 'undefined' && google.accounts?.oauth2)
         google.accounts.oauth2.revoke(token.access_token, () => {});
-      }
-      if (typeof google !== 'undefined' && google.accounts?.id) {
+      if (typeof google !== 'undefined' && google.accounts?.id)
         google.accounts.id.disableAutoSelect();
-      }
-      if (typeof gapi !== 'undefined' && gapi.client) {
+      if (typeof gapi !== 'undefined' && gapi.client)
         gapi.client.setToken(null);
-      }
-    } catch(e) {
-      console.warn('[Logout] Token revoke error (non-fatal):', e);
-    }
-
-    // Wipe all local storage
+    } catch(e) { console.warn('[Logout] token revoke (non-fatal):', e); }
     localStorage.clear();
-
-    // Reload to a clean state
     location.reload();
-  };
+  }
+  el('logout-open-btn').addEventListener('click',    () => { el('logout-modal').style.display = 'flex'; });
+  el('logout-open-btn-2').addEventListener('click',  () => { el('logout-modal').style.display = 'flex'; });
+  el('logout-cancel-btn').addEventListener('click',  () => { el('logout-modal').style.display = 'none'; });
+  el('logout-confirm-btn').addEventListener('click', doLogout);
+  el('logout-modal').addEventListener('click', e => { if (e.target === el('logout-modal')) el('logout-modal').style.display = 'none'; });
+
+  // ── Delete modal ───────────────────────────────────────────────────────
+  el('delete-cancel-btn').addEventListener('click', () => { el('delete-modal').style.display = 'none'; });
+  el('delete-modal').addEventListener('click', e => { if (e.target === el('delete-modal')) el('delete-modal').style.display = 'none'; });
 
   // ── Boot ──────────────────────────────────────────────────────────────
   loadLocal();

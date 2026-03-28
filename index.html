@@ -1008,9 +1008,10 @@
   </header>
 
   <!-- ── TAB NAV ─────────────────────────────────────────────────── -->
-  <div class="tab-nav" id="tab-nav">
+  <div class="tab-nav" id="tab-nav" style="align-items:center;">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="history">History &amp; Timeline</button>
+    <button type="button" onclick="logoutAndClear()" title="Disconnect Drive &amp; clear all local data" style="margin-left:auto;margin-bottom:1px;background:transparent;color:var(--red);border:1px solid var(--red-dim);padding:5px 13px;border-radius:var(--r-sm);cursor:pointer;font-size:12px;font-family:var(--font-mono);letter-spacing:.04em;transition:all var(--transition);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">⏻ Logout</button>
   </div>
 
   <!-- ══ DASHBOARD TAB ══════════════════════════════════════════════ -->
@@ -1184,6 +1185,10 @@
         <button type="button" class="btn-secondary btn-sm" id="drive-connect-btn" disabled title="Waiting for Google APIs to load…">Connect Drive</button>
         <button type="button" class="btn-secondary btn-sm" id="drive-save-btn" disabled>Save to Drive</button>
         <span class="drive-status" id="drive-status">⏳ Loading Google APIs…</span>
+      </div>
+      <div style="margin-top:10px;">
+        <button type="button" onclick="logoutAndClear()" style="background:transparent;color:var(--red);border:1px solid var(--red-dim);padding:6px 14px;border-radius:var(--r-sm);cursor:pointer;font-size:12px;font-family:var(--font-mono);letter-spacing:.04em;transition:all var(--transition);" onmouseover="this.style.background='var(--red-dim)'" onmouseout="this.style.background='transparent'">⏻ Logout &amp; Clear All Data</button>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Disconnects Google Drive and removes all data from this browser.</div>
       </div>
       <!-- Live diagnostic — shows exactly why the button is grey -->
       <div id="drive-diag" style="margin-top:10px; padding:10px 12px; background:var(--surface-3); border:1px solid var(--border); border-radius:var(--r-sm); font-family:var(--font-mono); font-size:10px; line-height:1.8; color:var(--text-muted);">
@@ -2520,6 +2525,33 @@
       el('tab-history').style.display   = btn.dataset.tab === 'history'   ? '' : 'none';
     });
   });
+
+  // ── Logout & Clear ────────────────────────────────────────────────────
+  window.logoutAndClear = function() {
+    if (!confirm('Disconnect Drive and delete all local data?\n\nThis cannot be undone.')) return;
+
+    // Revoke Google OAuth token if one is active
+    try {
+      const token = gapi?.client?.getToken?.();
+      if (token && typeof google !== 'undefined' && google.accounts?.oauth2) {
+        google.accounts.oauth2.revoke(token.access_token, () => {});
+      }
+      if (typeof google !== 'undefined' && google.accounts?.id) {
+        google.accounts.id.disableAutoSelect();
+      }
+      if (typeof gapi !== 'undefined' && gapi.client) {
+        gapi.client.setToken(null);
+      }
+    } catch(e) {
+      console.warn('[Logout] Token revoke error (non-fatal):', e);
+    }
+
+    // Wipe all local storage
+    localStorage.clear();
+
+    // Reload to a clean state
+    location.reload();
+  };
 
   // ── Boot ──────────────────────────────────────────────────────────────
   loadLocal();
